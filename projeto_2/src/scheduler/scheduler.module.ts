@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { SchedulerService } from './scheduler.service';
 import { SchedulerController } from './scheduler.controller';
 import { QueueModule } from '../common/queue/queue.module';
@@ -8,9 +8,9 @@ import { CommonModule } from '../common/common.module';
 
 @Module({
   imports: [
-    forwardRef(() => QueueModule),
-    ReportsModule,
-    CommonModule
+    CommonModule,
+    QueueModule,
+    ReportsModule
   ],
   providers: [SchedulerService],
   controllers: [SchedulerController, MedicalConsultationsController],

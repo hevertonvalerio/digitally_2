@@ -1,8 +1,9 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { SchedulerService } from './scheduler.service';
 import { IAppointment, ISchedulerOptions } from '../common/interfaces/scheduler.interface';
 import { v4 as uuidv4 } from 'uuid';
+import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 
 @ApiTags('scheduler')
 @Controller('scheduler')
@@ -45,6 +46,21 @@ export class SchedulerController {
   @Put('appointments/:id')
   @ApiOperation({ summary: 'Atualizar agendamento' })
   @ApiResponse({ status: 200, description: 'Agendamento atualizado com sucesso' })
+  @ApiResponse({ status: 404, description: 'Agendamento não encontrado' })
+  @ApiBody({
+    type: UpdateAppointmentDto,
+    description: 'Dados para atualização do agendamento',
+    examples: {
+      default: {
+        value: {
+          status: "confirmed",
+          notes: "Paciente confirmou por telefone",
+          specialty: "Clínica Geral",
+          appointmentType: "consultation"
+        }
+      }
+    }
+  })
   async updateAppointment(
     @Param('id') id: string,
     @Body() data: Partial<IAppointment>,

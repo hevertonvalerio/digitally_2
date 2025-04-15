@@ -12,8 +12,6 @@ import { CommonModule } from '../common.module';
 @Module({
   imports: [
     ConfigModule,
-    forwardRef(() => ReportsModule),
-    forwardRef(() => SchedulerModule),
     CommonModule,
     BullModule.forRootAsync({
       imports: [ConfigModule],

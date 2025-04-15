@@ -4,7 +4,12 @@ import { WebhookRequestDto } from './dto/webhook-request.dto';
 import { PhoneValidatorService } from '../common/services/phone-validator.service';
 import { SchedulerService } from '../scheduler/scheduler.service';
 import { QueueService } from '../common/queue/queue.service';
-import { IPAQueueJob } from '../common/interfaces/queue.interface';
+import { 
+  IPAQueueJob, 
+  IDiscardedMessage, 
+  IAppointmentNotification, 
+  INotificationJob 
+} from '../common/interfaces/queue.interface';
 
 @Injectable()
 export class WhatsappService implements OnModuleInit {
@@ -169,37 +174,35 @@ export class WhatsappService implements OnModuleInit {
   private async handleInvalidMessage(webhookData: WebhookRequestDto) {
     this.logger.warn(`Mensagem inválida recebida: ${JSON.stringify(webhookData)}`);
     
-    // Envia para a fila do PA
-    const paJob: IPAQueueJob = {
-      type: 'discarded_message',
-      data: {
-        messageId: webhookData.MessageSid,
-        from: webhookData.From,
-        content: webhookData.ButtonText,
-        receivedAt: new Date().toISOString(),
-        reason: 'invalid_message_format'
-      }
+    const discardedMessage: IDiscardedMessage = {
+      messageId: webhookData.MessageSid,
+      from: webhookData.From,
+      content: webhookData.ButtonText,
+      receivedAt: new Date().toISOString(),
+      reason: 'invalid_message_format'
     };
 
-    await this.queueService.addNotificationJob(paJob);
+    await this.queueService.addNotificationJob({
+      type: 'discarded_message',
+      data: discardedMessage
+    });
   }
 
   private async handleNoAppointmentFound(webhookData: WebhookRequestDto) {
     this.logger.warn(`Nenhum agendamento encontrado para: ${webhookData.From}`);
     
-    // Envia para a fila do PA
-    const paJob: IPAQueueJob = {
-      type: 'discarded_message',
-      data: {
-        messageId: webhookData.MessageSid,
-        from: webhookData.From,
-        content: webhookData.ButtonText,
-        receivedAt: new Date().toISOString(),
-        reason: 'no_appointment_found'
-      }
+    const discardedMessage: IDiscardedMessage = {
+      messageId: webhookData.MessageSid,
+      from: webhookData.From,
+      content: webhookData.ButtonText,
+      receivedAt: new Date().toISOString(),
+      reason: 'no_appointment_found'
     };
 
-    await this.queueService.addNotificationJob(paJob);
+    await this.queueService.addNotificationJob({
+      type: 'discarded_message',
+      data: discardedMessage
+    });
   }
 
   private async findAppointmentByPhone(phone: string) {
@@ -223,16 +226,21 @@ export class WhatsappService implements OnModuleInit {
       confirmationResponse: webhookData.ButtonText
     });
 
-    // Notifica área de negócios via fila de notificações
+    const notification: IAppointmentNotification = {
+      appointmentId,
+      patientName: '', // Será preenchido pelo serviço
+      patientPhone: webhookData.From,
+      appointmentDate: '', // Será preenchido pelo serviço
+      appointmentTime: '', // Será preenchido pelo serviço
+      response: webhookData.ButtonText,
+      messageId: webhookData.MessageSid,
+      receivedAt: new Date().toISOString()
+    };
+
     await this.queueService.addNotificationJob({
       type: 'appointment_response',
-      data: {
-        appointmentId,
-        response: webhookData.ButtonText,
-        messageId: webhookData.MessageSid,
-        receivedAt: new Date().toISOString()
-      },
-      priority: 1 // Alta prioridade para respostas de confirmação
+      data: notification,
+      priority: 1
     });
   }
 

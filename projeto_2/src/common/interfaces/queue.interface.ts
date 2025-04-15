@@ -44,8 +44,8 @@ export interface IErrorAlert {
 }
 
 export interface INotificationJob {
-  type: 'appointment' | 'business_area_report' | 'error_alert' | 'appointment_40h';
-  data: IAppointmentNotification | IBusinessAreaReport | IErrorAlert;
+  type: 'appointment' | 'business_area_report' | 'error_alert' | 'appointment_40h' | 'appointment_response' | 'discarded_message';
+  data: IAppointmentNotification | IBusinessAreaReport | IErrorAlert | IDiscardedMessage;
   priority?: number;
   attempts?: number;
 }
@@ -61,15 +61,20 @@ export interface IAppointmentNotification {
   examProtocol?: string;
   whatsappStatus?: 'pending' | 'sent' | 'confirmed' | 'cancelled' | 'no_response';
   retryCount?: number;
+  response?: string;
+  messageId?: string;
+  receivedAt?: string;
+}
+
+export interface IDiscardedMessage {
+  messageId: string;
+  from: string;
+  content?: string;
+  receivedAt: string;
+  reason: string;
 }
 
 export interface IPAQueueJob {
   type: 'discarded_message';
-  data: {
-    messageId: string;
-    from: string;
-    content?: string;
-    receivedAt: string;
-    reason: string;
-  };
+  data: IDiscardedMessage;
 } 

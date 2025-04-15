@@ -5,7 +5,7 @@ import { WhatsappSuccessResponseDto, WhatsappErrorResponseDto } from './dto/what
 import { WebhookRequestDto } from './dto/webhook-request.dto';
 import { SendAppointmentConfirmationDto } from './dto/send-appointment-confirmation.dto';
 
-@ApiTags('WhatsApp')
+@ApiTags('whatsapp')
 @Controller('whatsapp')
 export class WhatsappController {
   constructor(private readonly whatsappService: WhatsappService) {}

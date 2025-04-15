@@ -12,6 +12,9 @@ async function bootstrap() {
   const port = configService.get('PORT') || 3000;
   const prefix = configService.get('API_PREFIX') || 'api';
 
+  // Definir o prefixo global antes de configurar o Swagger
+  app.setGlobalPrefix(prefix);
+
   // Configuração do Swagger
   const config = new DocumentBuilder()
     .setTitle('Sistema de Agendamento Médico')
@@ -24,13 +27,11 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup(prefix, app, document);
-
-  app.setGlobalPrefix(prefix);
+  SwaggerModule.setup('api', app, document);
 
   await app.listen(port);
-  logger.log(`Aplicação rodando em http://localhost:${port}/${prefix}`);
-  logger.log(`Documentação Swagger disponível em http://localhost:${port}/${prefix}`);
+  logger.log(`Aplicação rodando em http://localhost:${port}`);
+  logger.log(`Documentação Swagger disponível em http://localhost:${port}/api`);
 }
 
 bootstrap();

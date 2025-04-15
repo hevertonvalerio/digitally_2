@@ -13,10 +13,10 @@ Desenvolver e disponibilizar APIs robustas para o sistema de agendamento que per
 ## 2. Requisitos de Implementação
 
 ### 2.1 Ajustes no Scheduler Service
-- [ ] Modificar horário do job para 00:00:01 (atualmente às 06:00)
-- [ ] Implementar endpoint para coleta de dados 48 horas antes do agendamento
-- [ ] Adicionar validação de número de telefone celular via API
-- [ ] Implementar sistema de retry para notificações (até 3 tentativas)
+- [X] Modificar horário do job para 00:00:01 (atualmente às 06:00)
+- [X] Implementar endpoint para coleta de dados 48 horas antes do agendamento
+- [X] Adicionar validação de número de telefone celular via API
+- [X] Implementar sistema de retry para notificações (até 3 tentativas)
 
 ### 2.2 Modelo de Dados (IAppointment)
 Adicionar campos obrigatórios:
@@ -28,26 +28,26 @@ Adicionar campos obrigatórios:
 - [ ] `cpf`: string (obrigatório)
 
 ### 2.3 Sistema de Notificações
-- [ ] Implementar endpoint para envio 40 horas antes do agendamento
-- [ ] Configurar janela de resposta de 24 horas via API
+- [X] Implementar endpoint para envio 40 horas antes do agendamento
+- [X] Configurar janela de resposta de 24 horas via API
 - [ ] Desenvolver templates de mensagem específicos por tipo:
   - [ ] Template para Consultas
   - [ ] Template para Procedimentos (com anexo de preparo)
-- [ ] Implementar lógica de retry automático via API
+- [X] Implementar lógica de retry automático via API
 
 ### 2.4 Geração de Relatórios
 Implementar endpoints para 3 tipos de relatórios automáticos:
-- [ ] Relatório de Cancelamentos
+- [X] Relatório de Cancelamentos
   - Data/Hora
   - Dados do paciente
   - Motivo do cancelamento
   
-- [ ] Relatório de Confirmações
+- [X] Relatório de Confirmações
   - Data/Hora
   - Dados do paciente
   - Horário da confirmação
   
-- [ ] Relatório de Não Respondidos/Sem WhatsApp
+- [X] Relatório de Não Respondidos/Sem WhatsApp
   - Data/Hora
   - Dados do paciente
   - Motivo (sem WhatsApp ou sem resposta)

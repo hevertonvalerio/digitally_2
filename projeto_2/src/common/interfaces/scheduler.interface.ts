@@ -12,6 +12,12 @@ export interface IAppointment {
   appointmentType: 'consultation' | 'procedure';
   examProtocol?: string;
   notes?: string;
+  // Campos adicionais para interações do WhatsApp
+  lastInteraction?: string;
+  lastStatus?: string;
+  lastResponse?: string;
+  confirmationDate?: string;
+  confirmationResponse?: string;
 }
 
 export interface ISchedulerOptions {
@@ -19,6 +25,7 @@ export interface ISchedulerOptions {
   time?: string;
   status?: string;
   notificationSent?: boolean;
+  patientPhone?: string;
 }
 
 export interface INotificationJob {

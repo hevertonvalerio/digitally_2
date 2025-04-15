@@ -5,7 +5,10 @@ import { ReportsController } from './reports.controller';
 import { CommonModule } from '../common/common.module';
 
 @Module({
-  imports: [ConfigModule, CommonModule],
+  imports: [
+    ConfigModule,
+    CommonModule
+  ],
   controllers: [ReportsController],
   providers: [ReportsService],
   exports: [ReportsService]
