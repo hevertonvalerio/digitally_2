@@ -253,46 +253,28 @@ export class SchedulerService {
   }
 
   async updateAppointment(id: string, data: Partial<IAppointment>): Promise<IAppointment | null> {
-    this.logger.log(`Atualizando agendamento ${id}`);
-
-    // Se houver atualização do telefone, valida o novo número
-    if (data.patientPhone) {
-      if (!this.phoneValidator.isCellPhone(data.patientPhone)) {
-        this.logger.warn(`Número de telefone inválido na atualização do agendamento ${id}: ${data.patientPhone}`);
-        
-        // Notifica área de negócio sobre telefone inválido
-        await this.queueService.addNotificationJob({
-          type: 'error_alert',
-          data: {
-            error: `Número de telefone inválido na atualização: ${data.patientPhone}`,
-            process: 'appointment_update',
-            date: new Date().toISOString().split('T')[0]
-          }
-        });
-
-        throw new BadRequestException('Número de telefone inválido. Deve ser um celular no formato DDD9XXXXXXXX');
-      }
-
-      // Formata o número para o padrão WhatsApp
-      try {
-        data.patientPhone = this.phoneValidator.formatToWhatsApp(data.patientPhone);
-      } catch (error) {
-        throw new BadRequestException('Erro ao formatar número de telefone: ' + error.message);
-      }
-    }
-
+    this.logger.log(`Atualizando agendamento ${id} com dados: ${JSON.stringify(data)}`);
     return this.databaseService.updateAppointment(id, data);
   }
 
-  async markNotificationSent(appointmentId: string) {
-    try {
-      // Atualiza o status da notificação no banco de dados
-      await this.databaseService.markNotificationSent(appointmentId);
-      this.logger.log(`Notificação marcada como enviada para agendamento ${appointmentId}`);
-    } catch (error) {
-      this.logger.error(`Erro ao marcar notificação como enviada: ${error.message}`);
-      throw error;
-    }
+  async markNotificationSent(appointmentId: string): Promise<IAppointment | null> {
+    this.logger.log(`Marcando notificação como enviada para o agendamento ${appointmentId}`);
+    return this.databaseService.markNotificationSent(appointmentId);
+  }
+
+  async getAppointmentById(appointmentId: string): Promise<IAppointment | null> {
+    this.logger.log(`Buscando agendamento por ID: ${appointmentId}`);
+    const appointments = await this.databaseService.findAppointments({ id: appointmentId });
+    return appointments[0] || null;
+  }
+
+  async updateAppointmentStatus(appointmentId: string, data: {
+    status: 'confirmed' | 'cancelled',
+    confirmationDate: string,
+    confirmationResponse: string
+  }): Promise<IAppointment | null> {
+    this.logger.log(`Atualizando status do agendamento ${appointmentId} para ${data.status}`);
+    return this.updateAppointment(appointmentId, data);
   }
 
   async createAppointment(appointment: IAppointment): Promise<IAppointment> {

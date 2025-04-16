@@ -1,9 +1,8 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { Processor, Process } from '@nestjs/bull';
 import { INotificationJob, IAppointmentNotification, IBusinessAreaReport, IErrorAlert, IWhatsappQueueJob } from '../../interfaces/queue.interface';
 import { QueueService } from '../queue.service';
-import { SchedulerService } from '../../../scheduler/scheduler.service';
 
 @Injectable()
 @Processor('notifications')
@@ -11,8 +10,7 @@ export class NotificationProcessor {
   private readonly logger = new Logger(NotificationProcessor.name);
 
   constructor(
-    @Optional() private readonly queueService: QueueService,
-    @Optional() private readonly schedulerService: SchedulerService,
+    private readonly queueService: QueueService,
   ) {}
 
   @Process()
@@ -32,6 +30,9 @@ export class NotificationProcessor {
           break;
         case 'appointment_40h':
           await this.handle40HourAppointment(job);
+          break;
+        case 'appointment_response':
+          await this.handleAppointmentResponse(job);
           break;
         default:
           this.logger.warn(`Tipo de notificação desconhecido: ${job.data.type}`);
@@ -78,35 +79,25 @@ export class NotificationProcessor {
     try {
       // Prepara a mensagem baseada no tipo de agendamento
       let message: string;
-      if (appointmentData.appointmentType === 'Consultation') {
-        message = `Bom dia!\nSua consulta referente a ${appointmentData.specialty} está agendada para o dia ${appointmentData.appointmentDate}, às ${appointmentData.appointmentTime}. Deseja confirmar a consulta?`;
-      } else {
+      if (appointmentData.appointmentType === 'Procedure') {
         message = `Bom dia!\nO seu procedimento referente a ${appointmentData.specialty} está agendado para o dia ${appointmentData.appointmentDate}, às ${appointmentData.appointmentTime}. Deseja confirmar o procedimento?`;
+      } else {
+        message = `Bom dia!\nSua consulta referente a ${appointmentData.specialty} está agendada para o dia ${appointmentData.appointmentDate}, às ${appointmentData.appointmentTime}. Deseja confirmar a consulta?`;
       }
 
-      // Cria o job do WhatsApp
-      const whatsappJob: IWhatsappQueueJob = {
+      // Adiciona à fila de WhatsApp
+      await this.queueService.addWhatsappJob({
         appointmentId: appointmentData.appointmentId,
         message,
         retryCount: 0
-      };
-
-      if (this.queueService) {
-        await this.queueService.addWhatsappJob(whatsappJob);
-      } else {
-        this.logger.warn(`Não foi possível adicionar o job de WhatsApp à fila porque o QueueService não está disponível`);
-      }
+      });
 
       // Marca notificação como enviada
-      if (this.queueService) {
-        await this.queueService.markNotificationAsSent(appointmentData.appointmentId);
-      } else {
-        this.logger.warn(`Não foi possível marcar a notificação como enviada porque o QueueService não está disponível`);
-      }
+      await this.queueService.markNotificationAsSent(appointmentData.appointmentId);
       
       this.logger.log(`Notificação de 40 horas enviada com sucesso para agendamento ${appointmentData.appointmentId}`);
     } catch (error) {
-      this.logger.error(`Erro ao processar notificação de 40 horas para agendamento ${appointmentData.appointmentId}:`, error);
+      this.logger.error(`Erro ao processar notificação de 40 horas: ${error.message}`);
       throw error;
     }
   }
@@ -116,10 +107,10 @@ export class NotificationProcessor {
     
     try {
       // Marca a notificação como enviada
-      if (this.schedulerService) {
-        await this.schedulerService.markNotificationSent(appointmentData.appointmentId);
+      if (this.queueService) {
+        await this.queueService.markNotificationAsSent(appointmentData.appointmentId);
       } else {
-        this.logger.warn(`Não foi possível marcar a notificação como enviada para o agendamento ${appointmentData.appointmentId} porque o SchedulerService não está disponível`);
+        this.logger.warn(`Não foi possível marcar a notificação como enviada para o agendamento ${appointmentData.appointmentId} porque o QueueService não está disponível`);
       }
       
       this.logger.log(`Notificação de agendamento processada com sucesso para ${appointmentData.patientName}`);
@@ -139,5 +130,88 @@ export class NotificationProcessor {
     const error = job.data.data as IErrorAlert;
     this.logger.log(`Processando alerta de erro: ${error.error}`);
     // ... implementação do processamento do alerta de erro ...
+  }
+
+  @Process('appointment_response')
+  private async handleAppointmentResponse(job: Job<INotificationJob>) {
+    const responseData = job.data.data as IAppointmentNotification;
+    this.logger.log(`Processando resposta de agendamento: ${JSON.stringify(responseData)}`);
+
+    try {
+      // Verifica se a resposta é válida
+      const isValidResponse = responseData.response === 'Sim' || responseData.response === 'Não';
+      
+      if (!isValidResponse) {
+        const retryCount = responseData.retryCount || 0;
+        
+        if (retryCount < 3) {
+          // Reenviar a mensagem inicial
+          this.logger.log(`Resposta inválida. Tentativa ${retryCount + 1} de 3.`);
+          
+          await this.queueService.addNotificationJob({
+            type: 'appointment_40h',
+            data: {
+              ...responseData,
+              retryCount: retryCount + 1
+            }
+          });
+          return;
+        } else {
+          // Na quarta tentativa, envia mensagem final
+          this.logger.log('Quarta tentativa com resposta inválida. Enviando mensagem final.');
+          await this.queueService.addWhatsappJob({
+            appointmentId: responseData.appointmentId,
+            message: 'Não foi possível confirmar o agendamento. Por gentileza, entre em contato pelo telefone XXXX.',
+            retryCount: 0
+          });
+          return;
+        }
+      }
+
+      // Processa a resposta válida
+      const status = responseData.response === 'Sim' ? 'confirmed' : 'cancelled';
+      
+      if (!responseData.response) {
+        throw new Error('Resposta não pode ser undefined');
+      }
+
+      // Atualiza o status do agendamento
+      await this.queueService.updateAppointmentStatus(responseData.appointmentId, {
+        status,
+        confirmationDate: responseData.receivedAt || new Date().toISOString(),
+        confirmationResponse: responseData.response
+      });
+
+      // Busca os dados completos do agendamento
+      const appointment = await this.queueService.getAppointmentById(responseData.appointmentId);
+      if (!appointment) {
+        throw new Error(`Agendamento ${responseData.appointmentId} não encontrado`);
+      }
+
+      // Envia mensagem de confirmação usando o número que enviou a mensagem
+      let confirmationMessage: string;
+      if (status === 'confirmed') {
+        confirmationMessage = appointment.examProtocol 
+          ? `Agradecemos o seu retorno. O agendamento foi realizado para a data ${appointment.appointmentDate}, às ${appointment.appointmentTime}. Segue o preparo do exame.`
+          : `Agradecemos o seu retorno. O agendamento foi realizado para a data ${appointment.appointmentDate}, às ${appointment.appointmentTime}.`;
+      } else {
+        confirmationMessage = 'Agradecemos o seu retorno. O agendamento foi desmarcado. Caso queira marcar um novo agendamento, entre em contato com a unidade básica de saúde da sua região.';
+      }
+
+      // Remove o prefixo 'whatsapp:' se existir
+      const phoneNumber = responseData.patientPhone.replace('whatsapp:', '');
+
+      await this.queueService.addWhatsappJob({
+        appointmentId: responseData.appointmentId,
+        message: confirmationMessage,
+        retryCount: 0,
+        phoneNumber // Adiciona o número do telefone que enviou a mensagem
+      });
+
+      this.logger.log(`Resposta de agendamento processada com sucesso: ${status}`);
+    } catch (error) {
+      this.logger.error(`Erro ao processar resposta de agendamento: ${error.message}`);
+      throw error;
+    }
   }
 } 

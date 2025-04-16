@@ -21,7 +21,7 @@ import { CommonModule } from '../common.module';
           port: configService.get('REDIS_PORT'),
         },
         defaultJobOptions: {
-          attempts: 3,
+          attempts: 1,
           backoff: {
             type: 'exponential',
             delay: 1000,
@@ -37,6 +37,7 @@ import { CommonModule } from '../common.module';
       { name: 'whatsapp' },
       { name: 'reports' }
     ),
+    forwardRef(() => SchedulerModule),
   ],
   providers: [
     QueueService,

@@ -13,6 +13,7 @@ export interface IWhatsappQueueJob {
   appointmentId: string;
   message: string;
   retryCount?: number;
+  phoneNumber?: string;
 }
 
 export interface IReportQueueJob {

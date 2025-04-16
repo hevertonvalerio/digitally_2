@@ -26,6 +26,7 @@ export interface ISchedulerOptions {
   status?: string;
   notificationSent?: boolean;
   patientPhone?: string;
+  id?: string;
 }
 
 export interface INotificationJob {

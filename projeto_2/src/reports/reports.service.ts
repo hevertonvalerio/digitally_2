@@ -31,6 +31,10 @@ export class ReportsService {
         status: 'cancelled'
       });
 
+      if (appointments.length === 0) {
+        return this.generateEmptyReport('Relatório de Pacientes que Desmarcaram', date);
+      }
+
       const reportData: IReportBase[] = appointments.map((apt: IAppointment) => ({
         name: apt.patientName,
         cpf: apt.cpf,
@@ -58,6 +62,10 @@ export class ReportsService {
         date,
         status: 'confirmed'
       });
+
+      if (appointments.length === 0) {
+        return this.generateEmptyReport('Relatório de Pacientes que Confirmaram', date);
+      }
 
       const reportData: IReportBase[] = appointments.map((apt: IAppointment) => ({
         name: apt.patientName,
@@ -110,11 +118,79 @@ export class ReportsService {
     }
   }
 
+  private async generateEmptyReport(title: string, date: string): Promise<Buffer> {
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      const doc = new PDFDocument({ margin: 50 });
+
+      doc.on('data', chunks.push.bind(chunks));
+      doc.on('end', () => {
+        resolve(Buffer.concat(chunks));
+      });
+
+      // Adiciona título
+      doc.fontSize(20).text(title, { align: 'center' });
+      doc.moveDown();
+
+      // Adiciona data do relatório
+      doc.fontSize(12).text(
+        `Gerado em: ${dateFormat(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`,
+        { align: 'right' }
+      );
+      doc.moveDown();
+
+      // Adiciona cabeçalho da tabela
+      const headers = ['Nome', 'CPF', 'Data', 'Horário', 'Especialidade', 'Tipo'];
+      const rowHeight = 30;
+      const colWidth = (doc.page.width - 100) / headers.length;
+      let yPos = doc.y;
+
+      // Desenha cabeçalho
+      headers.forEach((header, i) => {
+        doc.fontSize(12).text(header, 50 + (i * colWidth), yPos, {
+          width: colWidth,
+          align: 'center'
+        });
+      });
+
+      // Adiciona linha após o cabeçalho
+      yPos += rowHeight;
+      doc.moveTo(50, yPos).lineTo(doc.page.width - 50, yPos).stroke();
+      
+      // Adiciona espaço antes da mensagem
+      yPos += 30;
+      
+      // Adiciona linha horizontal antes da mensagem
+      doc.moveTo(50, yPos).lineTo(doc.page.width - 50, yPos).stroke();
+      
+      // Mensagem de nenhum registro centralizada na página
+      doc.fontSize(12).text(
+        `Nenhum registro encontrado para a data ${dateFormat(new Date(date), 'dd/MM/yyyy', { locale: ptBR })}`,
+        50,  // x position
+        yPos + 10,  // y position
+        {
+          width: doc.page.width - 100,
+          align: 'center'
+        }
+      );
+      
+      // Adiciona linha horizontal após a mensagem
+      yPos += 40;
+      doc.moveTo(50, yPos).lineTo(doc.page.width - 50, yPos).stroke();
+
+      doc.end();
+    });
+  }
+
   private async generateReport(
     title: string,
     data: IReportBase[] | INoResponseReport[],
     format: 'pdf' | 'csv'
   ): Promise<Buffer> {
+    if (data.length === 0) {
+      return this.generateEmptyReport(title, new Date().toISOString().split('T')[0]);
+    }
+
     const fileName = this.generateFileName(title, format);
     let fileBuffer: Buffer;
 
@@ -169,7 +245,7 @@ export class ReportsService {
 
     // Desenha cabeçalho
     headers.forEach((header, i) => {
-      doc.text(header, 50 + (i * colWidth), yPos, {
+      doc.fontSize(12).text(header, 50 + (i * colWidth), yPos, {
         width: colWidth,
         align: 'center'
       });
@@ -187,9 +263,35 @@ export class ReportsService {
       }
 
       headers.forEach((header, i) => {
-        const field = header.toLowerCase();
-        doc.text(
-          String(row[field] || ''),
+        let value = '';
+        switch(header.toLowerCase()) {
+          case 'nome':
+            value = row.name || '';
+            break;
+          case 'cpf':
+            value = row.cpf || '';
+            break;
+          case 'data':
+            value = row.date ? dateFormat(new Date(row.date), 'dd/MM/yyyy', { locale: ptBR }) : '';
+            break;
+          case 'horário':
+            value = row.time || '';
+            break;
+          case 'especialidade':
+            value = row.specialty || '';
+            break;
+          case 'tipo':
+            value = row.type || '';
+            break;
+          case 'motivo':
+            value = row.reason || '';
+            break;
+          default:
+            value = '';
+        }
+
+        doc.fontSize(10).text(
+          value,
           50 + (i * colWidth),
           yPos,
           {
@@ -200,6 +302,9 @@ export class ReportsService {
       });
 
       yPos += rowHeight;
+      
+      // Adiciona linha divisória entre as linhas de dados
+      doc.moveTo(50, yPos - 5).lineTo(doc.page.width - 50, yPos - 5).stroke();
     });
   }
 
@@ -236,9 +341,8 @@ export class ReportsService {
 
   async sendReportByEmail(options: IEmailOptions): Promise<boolean> {
     try {
-      // TODO: Implementar envio de e-mail usando nodemailer ou outro serviço
       this.logger.log(`Enviando relatório por e-mail para: ${options.to.join(', ')}`);
-      return true;
+      return await this.emailService.sendEmail(options);
     } catch (error) {
       this.logger.error(`Erro ao enviar relatório por e-mail: ${error.message}`);
       return false;

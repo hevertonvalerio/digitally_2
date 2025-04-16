@@ -1,7 +1,8 @@
 import { Controller, Post, Body, Get, Param, Res, Logger } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { Response } from 'express';
 import { ReportsService } from './reports.service';
+import { GenerateReportDto } from './dto/generate-report.dto';
 import { IReportOptions } from '../common/interfaces/report.interface';
 
 @ApiTags('reports')
@@ -14,16 +15,29 @@ export class ReportsController {
   @Post('attendance')
   @ApiOperation({ summary: 'Gera lista de presença' })
   @ApiResponse({ status: 200, description: 'Relatório gerado com sucesso' })
-  async generateAttendanceList(@Body() options: IReportOptions) {
+  @ApiBody({ type: GenerateReportDto })
+  async generateAttendanceList(@Body() options: GenerateReportDto) {
     this.logger.log('Solicitação de geração de lista de presença recebida');
     
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const reportBuffer = await this.reportsService.generateConfirmationReport(today);
+      const reportBuffer = await this.reportsService.generateConfirmationReport(options.startDate);
+      
+      // Se houver e-mails configurados, envia o relatório
+      if (options.emailTo && options.emailTo.length > 0) {
+        await this.reportsService.sendReportByEmail({
+          to: options.emailTo,
+          subject: 'Lista de Presença',
+          body: `Relatório de Lista de Presença - ${options.startDate}`,
+          attachments: [{
+            filename: `lista_presenca_${options.startDate}.${options.format}`,
+            content: reportBuffer
+          }]
+        });
+      }
       
       return {
         success: true,
-        fileName: `lista_presenca_${today}.pdf`,
+        fileName: `lista_presenca_${options.startDate}.${options.format}`,
         fileBuffer: reportBuffer
       };
     } catch (error) {
@@ -38,16 +52,29 @@ export class ReportsController {
   @Post('absentees')
   @ApiOperation({ summary: 'Gera lista de ausentes' })
   @ApiResponse({ status: 200, description: 'Relatório gerado com sucesso' })
-  async generateAbsentList(@Body() options: IReportOptions) {
+  @ApiBody({ type: GenerateReportDto })
+  async generateAbsentList(@Body() options: GenerateReportDto) {
     this.logger.log('Solicitação de geração de lista de ausentes recebida');
     
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const reportBuffer = await this.reportsService.generateCancellationReport(today);
+      const reportBuffer = await this.reportsService.generateCancellationReport(options.startDate);
+      
+      // Se houver e-mails configurados, envia o relatório
+      if (options.emailTo && options.emailTo.length > 0) {
+        await this.reportsService.sendReportByEmail({
+          to: options.emailTo,
+          subject: 'Lista de Ausentes',
+          body: `Relatório de Lista de Ausentes - ${options.startDate}`,
+          attachments: [{
+            filename: `lista_ausentes_${options.startDate}.${options.format}`,
+            content: reportBuffer
+          }]
+        });
+      }
       
       return {
         success: true,
-        fileName: `lista_ausentes_${today}.pdf`,
+        fileName: `lista_ausentes_${options.startDate}.${options.format}`,
         fileBuffer: reportBuffer
       };
     } catch (error) {
