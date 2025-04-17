@@ -10,7 +10,7 @@ export interface IQueueJob<T> {
 }
 
 export interface IWhatsappQueueJob {
-  appointmentId: string;
+  appointmentId: number;
   message: string;
   retryCount?: number;
   phoneNumber?: string;
@@ -24,7 +24,7 @@ export interface IReportQueueJob {
 export interface INotificationQueueJob {
   type: string;
   data: {
-    appointmentId: string;
+    appointmentId: number;
     patientName: string;
     patientPhone: string;
     appointmentDate: string;
@@ -52,7 +52,7 @@ export interface INotificationJob {
 }
 
 export interface IAppointmentNotification {
-  appointmentId: string;
+  appointmentId: number;
   patientName: string;
   patientPhone: string;
   appointmentDate: string;
@@ -78,4 +78,4 @@ export interface IDiscardedMessage {
 export interface IPAQueueJob {
   type: 'discarded_message';
   data: IDiscardedMessage;
-} 
+}

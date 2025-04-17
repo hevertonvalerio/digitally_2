@@ -1,23 +1,26 @@
 export interface IAppointment {
-  id: string;
+  id: number;
+  clientId: number;
   patientName: string;
   patientPhone: string;
   cpf: string;
-  appointmentDate: string;
+  appointmentDate: Date;
   appointmentTime: string;
   status: 'scheduled' | 'confirmed' | 'cancelled' | 'completed';
   notificationSent: boolean;
-  notificationDate?: string;
+  notificationDate?: Date;
   specialty: string;
   appointmentType: 'consultation' | 'procedure';
   examProtocol?: string;
   notes?: string;
-  // Campos adicionais para interações do WhatsApp
-  lastInteraction?: string;
+  lastInteraction?: Date;
   lastStatus?: string;
   lastResponse?: string;
-  confirmationDate?: string;
+  confirmationDate?: Date;
   confirmationResponse?: string;
+  createdAt: Date;
+  client?: any;
+  notifications?: any[];
 }
 
 export interface ISchedulerOptions {
@@ -26,7 +29,7 @@ export interface ISchedulerOptions {
   status?: string;
   notificationSent?: boolean;
   patientPhone?: string;
-  id?: string;
+  id?: number;
 }
 
 export interface INotificationJob {
@@ -37,7 +40,7 @@ export interface INotificationJob {
 }
 
 export interface IAppointmentNotification {
-  appointmentId: string;
+  appointmentId: number;
   patientName: string;
   patientPhone: string;
   appointmentDate: string;
@@ -54,4 +57,4 @@ export interface IErrorAlert {
   error: string;
   process: string;
   date: string;
-} 
+}

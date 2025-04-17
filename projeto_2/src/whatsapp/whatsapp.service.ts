@@ -99,12 +99,36 @@ export class WhatsappService implements OnModuleInit {
       throw new BadRequestException('O número fornecido não é um celular válido');
     }
 
+    // Criar o agendamento no banco de dados
+    const newAppointment = {
+      id: Date.now(), // Usando timestamp como ID numérico
+      patientName: appointmentData.patientName,
+      patientPhone: this.phoneValidator.formatToWhatsApp(to),
+      appointmentDate: new Date(appointmentData.date),
+      appointmentTime: appointmentData.time,
+      status: 'scheduled' as const,
+      notificationSent: false,
+      specialty: 'Consulta Geral', // Valor padrão
+      appointmentType: 'consultation' as const, // Valor padrão
+      cpf: '', // Será preenchido posteriormente
+      clientId: 1, // ID do cliente padrão
+      createdAt: new Date()
+    };
+
+    const appointment = await this.schedulerService.createAppointment(newAppointment);
+
     const text = `Olá ${appointmentData.patientName}, você confirma sua consulta para ${appointmentData.date} às ${appointmentData.time}?`;
     
-    return this.sendInteractiveMessage(to, text, [
+    const messageResult = await this.sendInteractiveMessage(to, text, [
       { title: 'Sim', id: 'confirm_appointment' },
       { title: 'Não', id: 'cancel_appointment' }
     ]);
+
+    if (messageResult.success) {
+      await this.schedulerService.markNotificationSent(Number(appointment.id));
+    }
+
+    return messageResult;
   }
 
   async handleWebhook(webhookData: WebhookRequestDto) {
@@ -138,12 +162,12 @@ export class WhatsappService implements OnModuleInit {
 
       // 4. Processamento da resposta
       if (webhookData.ButtonText) {
-        await this.processButtonResponse(webhookData, appointment.id);
+        await this.processButtonResponse(webhookData, Number(appointment.id));
       }
 
       // 5. Registro do retorno
-      await this.schedulerService.updateAppointment(appointment.id, {
-        lastInteraction: new Date().toISOString(),
+      await this.schedulerService.updateAppointment(Number(appointment.id), {
+        lastInteraction: new Date(),
         lastStatus: webhookData.MessageStatus,
         lastResponse: webhookData.ButtonText || undefined,
       });
@@ -217,12 +241,12 @@ export class WhatsappService implements OnModuleInit {
     return appointments[0] || null;
   }
 
-  private async processButtonResponse(webhookData: WebhookRequestDto, appointmentId: string) {
+  private async processButtonResponse(webhookData: WebhookRequestDto, appointmentId: number) {
     const status = webhookData.ButtonText === 'Sim' ? 'confirmed' : 'cancelled';
     
     await this.schedulerService.updateAppointment(appointmentId, {
       status,
-      confirmationDate: new Date().toISOString(),
+      confirmationDate: new Date(),
       confirmationResponse: webhookData.ButtonText
     });
 

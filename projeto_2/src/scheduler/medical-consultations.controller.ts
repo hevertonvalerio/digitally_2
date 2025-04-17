@@ -17,10 +17,13 @@ export class MedicalConsultationsController {
   async createMedicalConsultation(@Body() createAppointmentDto: CreateAppointmentDto) {
     const appointment: IAppointment = {
       ...createAppointmentDto,
-      id: uuidv4(),
+      id: Date.now(), // Usando timestamp como ID numérico
+      clientId: 1, // ID do cliente padrão
       status: 'scheduled' as const,
       notificationSent: false,
+      createdAt: new Date(),
+      appointmentDate: new Date(createAppointmentDto.appointmentDate)
     };
     return this.schedulerService.createAppointment(appointment);
   }
-} 
+}

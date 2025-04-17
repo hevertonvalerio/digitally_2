@@ -1,169 +1,85 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { IAppointment, ISchedulerOptions } from '../interfaces/scheduler.interface';
+import { Appointment } from '../../scheduler/entities/appointment.entity';
 
 @Injectable()
 export class DatabaseService {
   private readonly logger = new Logger(DatabaseService.name);
-  private appointments: IAppointment[] = [];
 
-  constructor() {
-    // Inicializando dados mock
-    this.initializeMockData();
-  }
-
-  private initializeMockData() {
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const nextWeek = new Date(today);
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    
-    this.appointments = [
-      {
-        id: '1',
-        patientName: 'João Silva',
-        patientPhone: '+5511999999999',
-        cpf: '12345678900',
-        appointmentDate: today.toISOString().split('T')[0],
-        appointmentTime: '09:00',
-        specialty: 'Clínica Geral',
-        appointmentType: 'consultation',
-        status: 'scheduled',
-        notificationSent: false,
-        notes: 'Primeira consulta'
-      },
-      {
-        id: '2',
-        patientName: 'Maria Oliveira',
-        patientPhone: '+5511988888888',
-        cpf: '98765432100',
-        appointmentDate: today.toISOString().split('T')[0],
-        appointmentTime: '10:30',
-        specialty: 'Retorno',
-        appointmentType: 'consultation',
-        status: 'confirmed',
-        notificationSent: true,
-        notificationDate: new Date(today.getTime() - 24 * 60 * 60 * 1000).toISOString(),
-        notes: 'Retorno'
-      },
-      {
-        id: '3',
-        patientName: 'Pedro Santos',
-        patientPhone: '+5511977777777',
-        cpf: '45678912300',
-        appointmentDate: tomorrow.toISOString().split('T')[0],
-        appointmentTime: '14:00',
-        specialty: 'Clínica Geral',
-        appointmentType: 'consultation',
-        status: 'scheduled',
-        notificationSent: false,
-        notes: 'Consulta de rotina'
-      },
-      {
-        id: '4',
-        patientName: 'Carlos Ferreira',
-        patientPhone: '+5511966666666',
-        cpf: '78912345600',
-        appointmentDate: nextWeek.toISOString().split('T')[0],
-        appointmentTime: '11:00',
-        specialty: 'Retorno',
-        appointmentType: 'consultation',
-        status: 'cancelled',
-        notificationSent: true,
-        notificationDate: new Date(nextWeek.getTime() - 48 * 60 * 60 * 1000).toISOString(),
-        notes: 'Paciente desmarcou'
-      },
-      {
-        id: '5',
-        patientName: 'Ana Costa',
-        patientPhone: '+5511955555555',
-        cpf: '32165498700',
-        appointmentDate: nextWeek.toISOString().split('T')[0],
-        appointmentTime: '15:30',
-        specialty: 'Primeira Consulta',
-        appointmentType: 'consultation',
-        status: 'scheduled',
-        notificationSent: false,
-        notes: 'Nova paciente'
-      },
-      {
-        id: '6',
-        patientName: 'Gustavo Da Silva',
-        patientPhone: '+5511975657964',
-        cpf: '14725836900',
-        appointmentDate: nextWeek.toISOString().split('T')[0],
-        appointmentTime: '15:30',
-        specialty: 'Primeira Consulta',
-        appointmentType: 'consultation',
-        status: 'scheduled',
-        notificationSent: false,
-        notes: 'Novo paciente'
-      }
-    ];
-  }
+  constructor(
+    @InjectRepository(Appointment)
+    private appointmentRepository: Repository<Appointment>
+  ) {}
 
   async findAppointments(options: ISchedulerOptions): Promise<IAppointment[]> {
     this.logger.log(`Buscando agendamentos com filtros: ${JSON.stringify(options)}`);
     
-    return this.appointments.filter(appointment => {
-      if (options.date && appointment.appointmentDate !== options.date) {
-        return false;
-      }
-      
-      if (options.time && appointment.appointmentTime !== options.time) {
-        return false;
-      }
-      
-      if (options.status && appointment.status !== options.status) {
-        return false;
-      }
-      
-      if (options.notificationSent !== undefined && appointment.notificationSent !== options.notificationSent) {
-        return false;
-      }
-      
-      return true;
-    });
+    const queryBuilder = this.appointmentRepository.createQueryBuilder('appointment');
+
+    if (options.date) {
+      queryBuilder.andWhere('appointment.appointmentDate = :date', { date: options.date });
+    }
+    
+    if (options.time) {
+      queryBuilder.andWhere('appointment.appointmentTime = :time', { time: options.time });
+    }
+    
+    if (options.status) {
+      queryBuilder.andWhere('appointment.status = :status', { status: options.status });
+    }
+    
+    if (options.notificationSent !== undefined) {
+      queryBuilder.andWhere('appointment.notificationSent = :notificationSent', { notificationSent: options.notificationSent });
+    }
+
+    return queryBuilder.getMany();
   }
 
-  async updateAppointment(id: string, data: Partial<IAppointment>): Promise<IAppointment | null> {
+  async updateAppointment(id: number, data: Partial<IAppointment>): Promise<IAppointment | null> {
     this.logger.log(`Atualizando agendamento ${id} com dados: ${JSON.stringify(data)}`);
     
-    const index = this.appointments.findIndex(appointment => appointment.id === id);
-    if (index === -1) {
-      return null;
-    }
-    
-    this.appointments[index] = {
-      ...this.appointments[index],
-      ...data
-    };
-    
-    return this.appointments[index];
+    await this.appointmentRepository.update(id, data);
+    return this.appointmentRepository.findOne({ where: { id } });
   }
 
-  async markNotificationSent(id: string): Promise<IAppointment | null> {
+  async markNotificationSent(id: number): Promise<IAppointment | null> {
     return this.updateAppointment(id, {
       notificationSent: true,
-      notificationDate: new Date().toISOString()
+      notificationDate: new Date()
     });
   }
 
-  async createAppointment(appointment: IAppointment): Promise<IAppointment> {
-    this.logger.log(`Criando agendamento: ${JSON.stringify(appointment)}`);
-    this.appointments.push(appointment);
-    return appointment;
+  async createAppointment(appointmentData: IAppointment): Promise<IAppointment> {
+    this.logger.log(`Criando agendamento: ${JSON.stringify(appointmentData)}`);
+    
+    // Converter strings de data para objetos Date
+    const appointment = {
+      ...appointmentData,
+      appointmentDate: new Date(appointmentData.appointmentDate),
+      notificationDate: appointmentData.notificationDate ? new Date(appointmentData.notificationDate) : undefined,
+      lastInteraction: appointmentData.lastInteraction ? new Date(appointmentData.lastInteraction) : undefined,
+      confirmationDate: appointmentData.confirmationDate ? new Date(appointmentData.confirmationDate) : undefined,
+    };
+
+    const newAppointment = this.appointmentRepository.create(appointment);
+    const savedAppointment = await this.appointmentRepository.save(newAppointment);
+
+    // Converter datas de volta para o formato esperado pela interface
+    return {
+      ...savedAppointment,
+      appointmentDate: savedAppointment.appointmentDate,
+      notificationDate: savedAppointment.notificationDate,
+      lastInteraction: savedAppointment.lastInteraction,
+      confirmationDate: savedAppointment.confirmationDate,
+    };
   }
 
-  async deleteAppointment(id: string): Promise<boolean> {
+  async deleteAppointment(id: number): Promise<boolean> {
     this.logger.log(`Removendo agendamento ${id}`);
-    const index = this.appointments.findIndex(appointment => appointment.id === id);
-    if (index === -1) {
-      return false;
-    }
-    this.appointments.splice(index, 1);
-    return true;
+    const result = await this.appointmentRepository.delete(id);
+    return result.affected !== null && result.affected !== undefined && result.affected > 0;
   }
 
   async getAppointments(options: ISchedulerOptions = {}): Promise<IAppointment[]> {
@@ -175,4 +91,4 @@ export class DatabaseService {
       return [];
     }
   }
-} 
+}

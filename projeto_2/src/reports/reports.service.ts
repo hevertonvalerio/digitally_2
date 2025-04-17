@@ -39,7 +39,7 @@ export class ReportsService {
         name: apt.patientName,
         cpf: apt.cpf,
         phone: apt.patientPhone,
-        date: apt.appointmentDate,
+        date: apt.appointmentDate.toISOString().split('T')[0],
         time: apt.appointmentTime,
         specialty: apt.specialty,
         type: apt.appointmentType
@@ -71,7 +71,7 @@ export class ReportsService {
         name: apt.patientName,
         cpf: apt.cpf,
         phone: apt.patientPhone,
-        date: apt.appointmentDate,
+        date: apt.appointmentDate.toISOString().split('T')[0],
         time: apt.appointmentTime,
         specialty: apt.specialty,
         type: apt.appointmentType
@@ -100,7 +100,7 @@ export class ReportsService {
         name: apt.patientName,
         cpf: apt.cpf,
         phone: apt.patientPhone,
-        date: apt.appointmentDate,
+        date: apt.appointmentDate.toISOString().split('T')[0],
         time: apt.appointmentTime,
         specialty: apt.specialty,
         type: apt.appointmentType,
@@ -348,4 +348,4 @@ export class ReportsService {
       return false;
     }
   }
-} 
+}

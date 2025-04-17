@@ -69,10 +69,10 @@ export class SchedulerService {
         const notification: INotificationJob = {
           type: 'appointment',
           data: {
-            appointmentId: appointment.id,
+            appointmentId: Number(appointment.id),
             patientName: appointment.patientName,
             patientPhone: appointment.patientPhone,
-            appointmentDate: appointment.appointmentDate,
+            appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
             appointmentTime: appointment.appointmentTime,
             retryCount: 0
           },
@@ -112,10 +112,10 @@ export class SchedulerService {
           const notification: INotificationJob = {
             type: 'appointment_40h',
             data: {
-              appointmentId: appointment.id,
+            appointmentId: Number(appointment.id),
               patientName: appointment.patientName,
               patientPhone: appointment.patientPhone,
-              appointmentDate: appointment.appointmentDate,
+              appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
               appointmentTime: appointment.appointmentTime,
               retryCount: 0
             },
@@ -231,10 +231,10 @@ export class SchedulerService {
         await this.queueService.addNotificationJob({
           type: 'appointment',
           data: {
-            appointmentId: appointment.id,
+            appointmentId: Number(appointment.id),
             patientName: appointment.patientName,
             patientPhone: appointment.patientPhone,
-            appointmentDate: appointment.appointmentDate,
+            appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
             appointmentTime: appointment.appointmentTime,
             retryCount: 0
           },
@@ -252,25 +252,25 @@ export class SchedulerService {
     return this.databaseService.findAppointments(options);
   }
 
-  async updateAppointment(id: string, data: Partial<IAppointment>): Promise<IAppointment | null> {
+  async updateAppointment(id: number, data: Partial<IAppointment>): Promise<IAppointment | null> {
     this.logger.log(`Atualizando agendamento ${id} com dados: ${JSON.stringify(data)}`);
     return this.databaseService.updateAppointment(id, data);
   }
 
-  async markNotificationSent(appointmentId: string): Promise<IAppointment | null> {
+  async markNotificationSent(appointmentId: number): Promise<IAppointment | null> {
     this.logger.log(`Marcando notificação como enviada para o agendamento ${appointmentId}`);
     return this.databaseService.markNotificationSent(appointmentId);
   }
 
-  async getAppointmentById(appointmentId: string): Promise<IAppointment | null> {
+  async getAppointmentById(appointmentId: number): Promise<IAppointment | null> {
     this.logger.log(`Buscando agendamento por ID: ${appointmentId}`);
     const appointments = await this.databaseService.findAppointments({ id: appointmentId });
     return appointments[0] || null;
   }
 
-  async updateAppointmentStatus(appointmentId: string, data: {
+  async updateAppointmentStatus(appointmentId: number, data: {
     status: 'confirmed' | 'cancelled',
-    confirmationDate: string,
+    confirmationDate: Date,
     confirmationResponse: string
   }): Promise<IAppointment | null> {
     this.logger.log(`Atualizando status do agendamento ${appointmentId} para ${data.status}`);
@@ -307,7 +307,7 @@ export class SchedulerService {
     return this.databaseService.createAppointment(appointment);
   }
 
-  async deleteAppointment(id: string): Promise<boolean> {
+  async deleteAppointment(id: number): Promise<boolean> {
     this.logger.log(`Removendo agendamento ${id}`);
     return this.databaseService.deleteAppointment(id);
   }
@@ -367,10 +367,10 @@ export class SchedulerService {
         const notification: INotificationJob = {
           type: 'appointment_40h',
           data: {
-            appointmentId: appointment.id,
+      appointmentId: Number(appointment.id),
             patientName: appointment.patientName,
             patientPhone: appointment.patientPhone,
-            appointmentDate: appointment.appointmentDate,
+            appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
             appointmentTime: appointment.appointmentTime,
             retryCount: 0
           },
@@ -388,7 +388,7 @@ export class SchedulerService {
   }
 
   async scheduleWhatsappNotification(
-    appointmentId: string,
+    appointmentId: number,
     message: string,
     retryCount: number
   ): Promise<void> {
@@ -406,10 +406,10 @@ export class SchedulerService {
     const notification: INotificationJob = {
       type: 'appointment_40h',
       data: {
-        appointmentId: appointment.id,
+        appointmentId: Number(appointment.id),
         patientName: appointment.patientName,
         patientPhone: appointment.patientPhone,
-        appointmentDate: appointment.date,
+        appointmentDate: appointment.date.toISOString().split('T')[0],
         appointmentTime: appointment.time,
         appointmentType: appointment.type,
         specialty: appointment.specialty,
@@ -471,4 +471,4 @@ export class SchedulerService {
       this.logger.error(`Erro ao gerar relatórios diários: ${error.message}`);
     }
   }
-} 
+}

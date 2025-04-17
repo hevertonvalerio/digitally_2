@@ -24,19 +24,19 @@ export class QueueService {
     return this.notificationQueue.add(data);
   }
 
-  async updateAppointmentStatus(appointmentId: string, data: {
+  async updateAppointmentStatus(appointmentId: number, data: {
     status: 'confirmed' | 'cancelled',
-    confirmationDate: string,
+    confirmationDate: Date,
     confirmationResponse: string
   }) {
     return this.schedulerService.updateAppointmentStatus(appointmentId, data);
   }
 
-  async getAppointmentById(appointmentId: string) {
+  async getAppointmentById(appointmentId: number) {
     return this.schedulerService.getAppointmentById(appointmentId);
   }
 
-  async markNotificationAsSent(appointmentId: string) {
+  async markNotificationAsSent(appointmentId: number) {
     return this.schedulerService.markNotificationSent(appointmentId);
   }
-} 
+}

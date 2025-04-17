@@ -1,44 +1,28 @@
-import sqlite3
-from datetime import datetime
+# init_db.py
+from db_manager import DatabaseManager
+import os
+from dotenv import load_dotenv
+
+# Carrega as variáveis de ambiente do .env
+load_dotenv()
 
 def init_db():
-    # Conectar ao banco de dados (criará o arquivo se não existir)
-    conn = sqlite3.connect('database.sqlite')
-    cursor = conn.cursor()
+    db_manager = DatabaseManager()
 
-    # Criar a tabela de consultas
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS consultas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        telefone TEXT NOT NULL,
-        consulta_agendada BOOLEAN DEFAULT 0,
-        consulta_confirmada BOOLEAN DEFAULT 0,
-        data_consulta DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-
-    # Inserir alguns dados de exemplo
+    # Dados iniciais de exemplo para popular a tabela consultas
     dados_exemplo = [
-        ('João Silva', '(11) 99999-9999', 1, 1, '2024-03-20 14:30:00'),
-        ('Maria Santos', '(11) 88888-8888', 1, 0, '2024-03-21 10:00:00'),
-        ('Pedro Oliveira', '(11) 77777-7777', 0, 0, '2024-03-22 15:45:00'),
-        ('Ana Costa', '(11) 66666-6666', 1, 1, '2024-03-23 09:15:00'),
-        ('Carlos Souza', '(11) 55555-5555', 1, 0, '2024-03-24 11:30:00')
+        ('João Silva', '(11) 99999-9999', '11122233344', '2025-05-20', '14:30', 'Consulta'),
+        ('Maria Santos', '(11) 88888-8888', '55566677788', '2025-05-21', '10:00', 'Consulta'),
+        ('Pedro Oliveira', '(11) 77777-7777', '99900011122', '2025-05-22', '15:45', 'Exame'),
+        ('Ana Costa', '(11) 66666-6666', '33344455566', '2025-05-23', '09:15', 'Procedimento'),
+        ('Carlos Souza', '(11) 55555-5555', '77788899900', '2025-05-24', '11:30', 'Consulta')
     ]
 
-    cursor.executemany('''
-    INSERT INTO consultas (nome, telefone, consulta_agendada, consulta_confirmada, data_consulta)
-    VALUES (?, ?, ?, ?, ?)
-    ''', dados_exemplo)
+    for nome, telefone, cpf, data_consulta, hora_consulta, tipo_consulta in dados_exemplo:
+        db_manager.add_consulta(nome, telefone, cpf, data_consulta, hora_consulta, tipo_consulta)
 
-    # Commit das alterações
-    conn.commit()
-
-    # Fechar a conexão
-    conn.close()
+    db_manager.close_connection()
+    print("✅ Banco de dados PostgreSQL inicializado com sucesso!")
 
 if __name__ == '__main__':
     init_db()
-    print("Banco de dados inicializado com sucesso!") 

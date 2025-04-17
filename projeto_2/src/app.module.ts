@@ -6,6 +6,7 @@ import { ReportsModule } from './reports/reports.module';
 import { QueueModule } from './common/queue/queue.module';
 import { CommonModule } from './common/common.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { DatabaseModule } from './database/database.module';
 import configuration from './config/configuration';
 import * as path from 'path';
 
@@ -19,6 +20,7 @@ import * as path from 'path';
       expandVariables: true,
       ignoreEnvFile: false,
     }),
+    DatabaseModule,
     ScheduleModule.forRoot(),
     CommonModule,
     QueueModule,

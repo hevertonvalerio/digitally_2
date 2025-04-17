@@ -37,7 +37,7 @@ export class SchedulerController {
   async createAppointment(@Body() appointmentData: Omit<IAppointment, 'id' | 'notificationSent' | 'notificationDate'>) {
     const appointment: IAppointment = {
       ...appointmentData,
-      id: uuidv4(),
+      id: Date.now(),
       notificationSent: false,
     };
     return this.schedulerService.createAppointment(appointment);
@@ -62,7 +62,7 @@ export class SchedulerController {
     }
   })
   async updateAppointment(
-    @Param('id') id: string,
+    @Param('id') id: number,
     @Body() data: Partial<IAppointment>,
   ) {
     return this.schedulerService.updateAppointment(id, data);
@@ -71,7 +71,7 @@ export class SchedulerController {
   @Delete('appointments/:id')
   @ApiOperation({ summary: 'Remover agendamento' })
   @ApiResponse({ status: 200, description: 'Agendamento removido com sucesso' })
-  async deleteAppointment(@Param('id') id: string) {
+  async deleteAppointment(@Param('id') id: number) {
     return this.schedulerService.deleteAppointment(id);
   }
-} 
+}

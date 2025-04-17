@@ -178,7 +178,7 @@ export class NotificationProcessor {
       // Atualiza o status do agendamento
       await this.queueService.updateAppointmentStatus(responseData.appointmentId, {
         status,
-        confirmationDate: responseData.receivedAt || new Date().toISOString(),
+        confirmationDate: responseData.receivedAt ? new Date(responseData.receivedAt) : new Date(),
         confirmationResponse: responseData.response
       });
 
@@ -214,4 +214,4 @@ export class NotificationProcessor {
       throw error;
     }
   }
-} 
+}
