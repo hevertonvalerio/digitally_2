@@ -1,11 +1,16 @@
-import { Controller, Post, Body, Get, Param, Res, Logger } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { Controller, Post, Body, Get, Param, Res, Logger, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiSecurity } from '@nestjs/swagger';
+import { ClientTokenGuard } from '../common/guards/client-token.guard';
+import { GetClient } from '../common/decorators/get-client.decorator';
+import { Client } from '../clients/entities/client.entity';
 import { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { GenerateReportDto } from './dto/generate-report.dto';
 import { IReportOptions } from '../common/interfaces/report.interface';
 
 @ApiTags('reports')
+@ApiSecurity('client-token')
+@UseGuards(ClientTokenGuard)
 @Controller('reports')
 export class ReportsController {
   private readonly logger = new Logger(ReportsController.name);
@@ -126,4 +131,4 @@ export class ReportsController {
       });
     }
   }
-} 
+}

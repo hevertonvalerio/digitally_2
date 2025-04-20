@@ -24,6 +24,10 @@ async function bootstrap() {
     .addTag('scheduler', 'Endpoints de agendamento')
     .addTag('reports', 'Endpoints de relatórios')
     .addTag('whatsapp', 'Endpoints de WhatsApp')
+    .addApiKey(
+      { type: 'apiKey', name: 'x-client-token', in: 'header' },
+      'client-token'
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

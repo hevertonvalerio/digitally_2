@@ -1,11 +1,17 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards } from '@nestjs/common';
 import { WhatsappService } from './whatsapp.service';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags, ApiSecurity } from '@nestjs/swagger';
+import { GetClient } from '../common/decorators/get-client.decorator';
+import { PublicRoute } from '../common/decorators/public-route.decorator';
+import { ClientTokenGuard } from '../common/guards/client-token.guard';
+import { Client } from '../clients/entities/client.entity';
 import { WhatsappSuccessResponseDto, WhatsappErrorResponseDto } from './dto/whatsapp-response.dto';
 import { WebhookRequestDto } from './dto/webhook-request.dto';
 import { SendAppointmentConfirmationDto } from './dto/send-appointment-confirmation.dto';
 
 @ApiTags('whatsapp')
+@ApiSecurity('client-token')
+@UseGuards(ClientTokenGuard)
 @Controller('whatsapp')
 export class WhatsappController {
   constructor(private readonly whatsappService: WhatsappService) {}
@@ -25,8 +31,12 @@ export class WhatsappController {
     description: 'Erro ao enviar mensagem',
     type: WhatsappErrorResponseDto,
   })
-  async sendAppointmentConfirmation(@Body() data: SendAppointmentConfirmationDto) {
+  async sendAppointmentConfirmation(
+    @GetClient() client: Client,
+    @Body() data: SendAppointmentConfirmationDto
+  ) {
     return await this.whatsappService.sendAppointmentConfirmation(
+      client,
       data.to,
       {
         patientName: data.patientName,
@@ -37,6 +47,7 @@ export class WhatsappController {
   }
 
   @Post('webhook')
+  @PublicRoute()
   @ApiOperation({
     summary: 'Receber atualizações de status das mensagens',
     description: 'Endpoint que recebe webhooks do Twilio com atualizações de status e respostas dos botões.',

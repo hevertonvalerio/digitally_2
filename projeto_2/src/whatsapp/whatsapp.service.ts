@@ -1,9 +1,12 @@
 import { Injectable, OnModuleInit, BadRequestException, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import * as twilio from 'twilio';
 import { WebhookRequestDto } from './dto/webhook-request.dto';
 import { PhoneValidatorService } from '../common/services/phone-validator.service';
 import { SchedulerService } from '../scheduler/scheduler.service';
 import { QueueService } from '../common/queue/queue.service';
+import { Client } from '../clients/entities/client.entity';
 import { 
   IPAQueueJob, 
   IDiscardedMessage, 
@@ -14,43 +17,57 @@ import {
 @Injectable()
 export class WhatsappService implements OnModuleInit {
   private readonly logger = new Logger(WhatsappService.name);
-  private client: twilio.Twilio;
-  private accountSid: string;
-  private authToken: string;
-  private fromNumber: string;
+  private clientsMap: Map<number, twilio.Twilio> = new Map();
 
   constructor(
     private readonly phoneValidator: PhoneValidatorService,
     private readonly schedulerService: SchedulerService,
     private readonly queueService: QueueService,
+    @InjectRepository(Client)
+    private readonly clientRepository: Repository<Client>,
   ) {}
 
   onModuleInit() {
-    this.validateEnvironmentVariables();
-    this.initializeTwilioClient();
+    // Inicialização do módulo
+    this.logger.log('WhatsappService initialized');
   }
 
-  private validateEnvironmentVariables() {
-    const {
-      TWILIO_ACCOUNT_SID,
-      TWILIO_AUTH_TOKEN,
-      TWILIO_FROM_NUMBER,
-    } = process.env;
-
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_FROM_NUMBER) {
-      throw new Error('Missing required environment variables for Twilio configuration');
+  private validateTwilioConfig(client: Client) {
+    if (!client.twilioAccountSid || !client.twilioAuthToken) {
+      throw new Error('Credenciais do Twilio não configuradas para o cliente');
+    }
+    
+    if (!client.twilioFromNumber) {
+      throw new Error('Número do WhatsApp não configurado para o cliente');
     }
 
-    this.accountSid = TWILIO_ACCOUNT_SID;
-    this.authToken = TWILIO_AUTH_TOKEN;
-    this.fromNumber = TWILIO_FROM_NUMBER;
+    // Valida formato do número
+    if (!client.twilioFromNumber.startsWith('+')) {
+      throw new Error('Número do WhatsApp deve começar com + e incluir código do país (ex: +5511999999999)');
+    }
+
+    this.logger.debug(`Configuração Twilio do cliente ${client.id}:
+      AccountSid: ${client.twilioAccountSid}
+      FromNumber: ${client.twilioFromNumber}
+    `);
   }
 
-  private initializeTwilioClient() {
-    this.client = twilio(this.accountSid, this.authToken);
+  private getTwilioClient(client: Client): twilio.Twilio {
+    this.validateTwilioConfig(client);
+
+    if (!this.clientsMap.has(client.id)) {
+      this.clientsMap.set(client.id, twilio(client.twilioAccountSid, client.twilioAuthToken));
+    }
+    
+    const twilioClient = this.clientsMap.get(client.id);
+    if (!twilioClient) {
+      throw new Error('Falha ao inicializar cliente Twilio');
+    }
+    
+    return twilioClient;
   }
 
-  async sendInteractiveMessage(to: string, text: string, buttons: Array<{ title: string; id: string }>) {
+  async sendInteractiveMessage(client: Client, to: string, text: string, buttons: Array<{ title: string; id: string }>) {
     try {
       if (!this.phoneValidator.isCellPhone(to)) {
         throw new BadRequestException('O número fornecido não é um celular válido');
@@ -61,14 +78,37 @@ export class WhatsappService implements OnModuleInit {
       const [name, dateTime] = text.split('você confirma sua consulta para ');
       const [date, time] = dateTime.split(' às ');
 
-      const message = await this.client.messages.create({
-        from: `whatsapp:${this.fromNumber}`,
-        to: `whatsapp:${formattedNumber}`,
-        contentSid: process.env.TWILIO_CONTENT_SID,
+      const twilioClient = this.getTwilioClient(client);
+      // Adiciona o prefixo whatsapp: se não existir
+      const fromNumber = client.twilioFromNumber.startsWith('whatsapp:') 
+        ? client.twilioFromNumber 
+        : `whatsapp:${client.twilioFromNumber}`;
+      
+      const toNumber = formattedNumber.startsWith('whatsapp:') 
+        ? formattedNumber 
+        : `whatsapp:${formattedNumber}`;
+
+      // Extrai apenas a data e hora para as variáveis do template
+      const dateStr = date.trim();
+      const timeStr = time.replace('?', '').trim();
+
+      this.logger.debug(`Enviando mensagem WhatsApp:
+        De: ${fromNumber}
+        Para: ${toNumber}
+        ContentSid: ${process.env.TWILIO_CONTENT_SID}
+        Variáveis: ${JSON.stringify({
+          1: dateStr,
+          2: timeStr
+        })}
+      `);
+
+      const message = await twilioClient.messages.create({
+        from: fromNumber,
+        to: toNumber,
+        contentSid: process.env.TWILIO_CONTENT_SID || '',
         contentVariables: JSON.stringify({
-          1: name.replace('Olá ', '').trim(),
-          2: date.trim(),
-          3: time.replace('?', '').trim()
+          1: dateStr,
+          2: timeStr
         })
       });
 
@@ -89,7 +129,7 @@ export class WhatsappService implements OnModuleInit {
     }
   }
 
-  async sendAppointmentConfirmation(to: string, appointmentData: {
+  async sendAppointmentConfirmation(client: Client, to: string, appointmentData: {
     patientName: string;
     date: string;
     time: string;
@@ -111,7 +151,7 @@ export class WhatsappService implements OnModuleInit {
       specialty: 'Consulta Geral', // Valor padrão
       appointmentType: 'consultation' as const, // Valor padrão
       cpf: '', // Será preenchido posteriormente
-      clientId: 1, // ID do cliente padrão
+      clientId: client.id,
       createdAt: new Date()
     };
 
@@ -119,7 +159,7 @@ export class WhatsappService implements OnModuleInit {
 
     const text = `Olá ${appointmentData.patientName}, você confirma sua consulta para ${appointmentData.date} às ${appointmentData.time}?`;
     
-    const messageResult = await this.sendInteractiveMessage(to, text, [
+    const messageResult = await this.sendInteractiveMessage(client, to, text, [
       { title: 'Sim', id: 'confirm_appointment' },
       { title: 'Não', id: 'cancel_appointment' }
     ]);
@@ -135,9 +175,17 @@ export class WhatsappService implements OnModuleInit {
     this.logger.log(`Recebendo webhook: ${JSON.stringify(webhookData)}`);
 
     try {
-      // 1. Validação do AccountSid
-      if (webhookData.AccountSid !== this.accountSid) {
-        throw new Error('Invalid AccountSid');
+      // 1. Validação do AccountSid e busca do cliente
+      if (!webhookData.AccountSid) {
+        throw new Error('AccountSid não fornecido');
+      }
+
+      const client = await this.clientRepository.findOne({
+        where: { twilioAccountSid: webhookData.AccountSid }
+      });
+
+      if (!client) {
+        throw new Error('Cliente não encontrado para o AccountSid fornecido');
       }
 
       // 2. Validação da mensagem

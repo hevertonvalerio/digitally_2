@@ -1,11 +1,16 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiSecurity } from '@nestjs/swagger';
 import { SchedulerService } from './scheduler.service';
 import { IAppointment, ISchedulerOptions } from '../common/interfaces/scheduler.interface';
 import { v4 as uuidv4 } from 'uuid';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { ClientTokenGuard } from '../common/guards/client-token.guard';
+import { GetClient } from '../common/decorators/get-client.decorator';
+import { Client } from '../clients/entities/client.entity';
 
 @ApiTags('scheduler')
+@ApiSecurity('client-token')
+@UseGuards(ClientTokenGuard)
 @Controller('scheduler')
 export class SchedulerController {
   constructor(private readonly schedulerService: SchedulerService) {}
@@ -34,11 +39,15 @@ export class SchedulerController {
   @Post('appointments')
   @ApiOperation({ summary: 'Criar agendamento' })
   @ApiResponse({ status: 201, description: 'Agendamento criado com sucesso' })
-  async createAppointment(@Body() appointmentData: Omit<IAppointment, 'id' | 'notificationSent' | 'notificationDate'>) {
+  async createAppointment(
+    @GetClient() client: Client,
+    @Body() appointmentData: Omit<IAppointment, 'id' | 'notificationSent' | 'notificationDate'>
+  ) {
     const appointment: IAppointment = {
       ...appointmentData,
       id: Date.now(),
       notificationSent: false,
+      clientId: client.id
     };
     return this.schedulerService.createAppointment(appointment);
   }
