@@ -128,55 +128,70 @@ export class ReportsService {
         resolve(Buffer.concat(chunks));
       });
 
-      // Adiciona título
-      doc.fontSize(20).text(title, { align: 'center' });
+      // Adiciona título em vermelho
+      doc.fontSize(24)
+         .fillColor('red')
+         .text(title, { align: 'center' });
       doc.moveDown();
 
       // Adiciona data do relatório
-      doc.fontSize(12).text(
-        `Gerado em: ${dateFormat(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`,
-        { align: 'right' }
-      );
+      doc.fillColor('black')
+         .fontSize(12)
+         .text(
+           `Gerado em: ${dateFormat(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`,
+           { align: 'right' }
+         );
       doc.moveDown();
 
-      // Adiciona cabeçalho da tabela
-      const headers = ['Nome', 'CPF', 'Data', 'Horário', 'Especialidade', 'Tipo'];
+      // Configuração da tabela
+      const tableWidth = doc.page.width - 100;
+      const headers = ['Nome', 'CPF', 'Telefone', 'Data agendamento', 'Especialidade'];
       const rowHeight = 30;
-      const colWidth = (doc.page.width - 100) / headers.length;
+      const colWidths = [
+        tableWidth * 0.25, // Nome
+        tableWidth * 0.15, // CPF
+        tableWidth * 0.2,  // Telefone
+        tableWidth * 0.2,  // Data agendamento
+        tableWidth * 0.2   // Especialidade
+      ];
+
+      let xPos = 50;
       let yPos = doc.y;
 
-      // Desenha cabeçalho
+      // Desenha borda externa da tabela
+      doc.rect(xPos, yPos, tableWidth, rowHeight).stroke();
+
+      // Desenha cabeçalho com bordas
       headers.forEach((header, i) => {
-        doc.fontSize(12).text(header, 50 + (i * colWidth), yPos, {
-          width: colWidth,
-          align: 'center'
-        });
+        doc.rect(xPos, yPos, colWidths[i], rowHeight).stroke();
+        doc.fontSize(12).text(
+          header,
+          xPos,
+          yPos + 10,
+          {
+            width: colWidths[i],
+            align: 'center'
+          }
+        );
+        xPos += colWidths[i];
       });
 
-      // Adiciona linha após o cabeçalho
       yPos += rowHeight;
-      doc.moveTo(50, yPos).lineTo(doc.page.width - 50, yPos).stroke();
+
+      // Desenha linha vazia com bordas para a mensagem
+      xPos = 50;
+      doc.rect(xPos, yPos, tableWidth, rowHeight).stroke();
       
-      // Adiciona espaço antes da mensagem
-      yPos += 30;
-      
-      // Adiciona linha horizontal antes da mensagem
-      doc.moveTo(50, yPos).lineTo(doc.page.width - 50, yPos).stroke();
-      
-      // Mensagem de nenhum registro centralizada na página
+      // Mensagem de nenhum registro centralizada
       doc.fontSize(12).text(
         `Nenhum registro encontrado para a data ${dateFormat(new Date(date), 'dd/MM/yyyy', { locale: ptBR })}`,
-        50,  // x position
-        yPos + 10,  // y position
+        xPos,
+        yPos + 10,
         {
-          width: doc.page.width - 100,
+          width: tableWidth,
           align: 'center'
         }
       );
-      
-      // Adiciona linha horizontal após a mensagem
-      yPos += 40;
-      doc.moveTo(50, yPos).lineTo(doc.page.width - 50, yPos).stroke();
 
       doc.end();
     });
@@ -214,19 +229,23 @@ export class ReportsService {
         resolve(Buffer.concat(chunks));
       });
 
-      // Adiciona título
-      doc.fontSize(20).text(title, { align: 'center' });
+      // Adiciona título em vermelho
+      doc.fontSize(24)
+         .fillColor('red')
+         .text(title, { align: 'center' });
       doc.moveDown();
 
       // Adiciona data do relatório
-      doc.fontSize(12).text(
-        `Gerado em: ${dateFormat(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`,
-        { align: 'right' }
-      );
+      doc.fillColor('black')
+         .fontSize(12)
+         .text(
+           `Gerado em: ${dateFormat(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`,
+           { align: 'right' }
+         );
       doc.moveDown();
 
       // Cabeçalho da tabela
-      const headers = ['Nome', 'CPF', 'Data', 'Horário', 'Especialidade', 'Tipo'];
+      const headers = ['Nome', 'CPF', 'Telefone', 'Data agendamento', 'Especialidade'];
       if ('reason' in data[0]) {
         headers.push('Motivo');
       }
@@ -240,20 +259,43 @@ export class ReportsService {
 
   private drawTable(doc: PDFKit.PDFDocument, headers: string[], data: any[]): void {
     const rowHeight = 30;
-    const colWidth = (doc.page.width - 100) / headers.length;
+    const tableWidth = doc.page.width - 100;
+    const colWidths = [
+      tableWidth * 0.25, // Nome
+      tableWidth * 0.15, // CPF
+      tableWidth * 0.2,  // Telefone
+      tableWidth * 0.2,  // Data agendamento
+      tableWidth * 0.2   // Especialidade
+    ];
+    
+    if (headers.includes('Motivo')) {
+      colWidths.push(tableWidth * 0.15); // Motivo
+    }
+    
+    let xPos = 50;
     let yPos = doc.y;
+
+    // Desenha borda externa da tabela
+    doc.rect(xPos, yPos, tableWidth, rowHeight).stroke();
 
     // Desenha cabeçalho
     headers.forEach((header, i) => {
-      doc.fontSize(12).text(header, 50 + (i * colWidth), yPos, {
-        width: colWidth,
-        align: 'center'
-      });
+      // Desenha borda da célula
+      doc.rect(xPos, yPos, colWidths[i], rowHeight).stroke();
+      
+      doc.fontSize(12).text(
+        header,
+        xPos,
+        yPos + 10,
+        {
+          width: colWidths[i],
+          align: 'center'
+        }
+      );
+      xPos += colWidths[i];
     });
 
     yPos += rowHeight;
-    doc.moveTo(50, yPos).lineTo(doc.page.width - 50, yPos).stroke();
-    yPos += 10;
 
     // Desenha linhas de dados
     data.forEach((row) => {
@@ -262,7 +304,11 @@ export class ReportsService {
         yPos = 50;
       }
 
+      xPos = 50;
       headers.forEach((header, i) => {
+        // Desenha borda da célula
+        doc.rect(xPos, yPos, colWidths[i], rowHeight).stroke();
+        
         let value = '';
         switch(header.toLowerCase()) {
           case 'nome':
@@ -271,17 +317,16 @@ export class ReportsService {
           case 'cpf':
             value = row.cpf || '';
             break;
-          case 'data':
-            value = row.date ? dateFormat(new Date(row.date), 'dd/MM/yyyy', { locale: ptBR }) : '';
+          case 'telefone':
+            value = row.phone || '';
             break;
-          case 'horário':
-            value = row.time || '';
+          case 'data agendamento':
+            const date = row.date ? dateFormat(new Date(row.date), 'dd/MM/yyyy', { locale: ptBR }) : '';
+            const time = row.time || '';
+            value = `${date} ${time}`;
             break;
           case 'especialidade':
             value = row.specialty || '';
-            break;
-          case 'tipo':
-            value = row.type || '';
             break;
           case 'motivo':
             value = row.reason || '';
@@ -292,19 +337,17 @@ export class ReportsService {
 
         doc.fontSize(10).text(
           value,
-          50 + (i * colWidth),
-          yPos,
+          xPos,
+          yPos + 10,
           {
-            width: colWidth,
+            width: colWidths[i],
             align: 'center'
           }
         );
+        xPos += colWidths[i];
       });
 
       yPos += rowHeight;
-      
-      // Adiciona linha divisória entre as linhas de dados
-      doc.moveTo(50, yPos - 5).lineTo(doc.page.width - 50, yPos - 5).stroke();
     });
   }
 
