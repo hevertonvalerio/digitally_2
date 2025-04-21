@@ -7,7 +7,7 @@ export default () => {
   console.log('NODE_ENV:', process.env.NODE_ENV);
 
   return {
-    port: parseInt(process.env.PORT || '3000', 10),
+    port: parseInt(process.env.PORT || '3001', 10),
     prefix: process.env.API_PREFIX || 'api',
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID,

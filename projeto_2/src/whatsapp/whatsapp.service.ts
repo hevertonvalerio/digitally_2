@@ -172,10 +172,10 @@ export class WhatsappService implements OnModuleInit {
   }
 
   async handleWebhook(webhookData: WebhookRequestDto) {
-    this.logger.log(`Recebendo webhook: ${JSON.stringify(webhookData)}`);
+    this.logger.log('Recebendo webhook: ' + JSON.stringify(webhookData));
 
     try {
-      // 1. Validação do AccountSid e busca do cliente
+      this.logger.log('1. Buscando cliente pelo AccountSid');
       if (!webhookData.AccountSid) {
         throw new Error('AccountSid não fornecido');
       }
@@ -183,13 +183,15 @@ export class WhatsappService implements OnModuleInit {
       const client = await this.clientRepository.findOne({
         where: { twilioAccountSid: webhookData.AccountSid }
       });
+      this.logger.log('2. Resultado da busca de cliente: ' + JSON.stringify(client));
 
       if (!client) {
         throw new Error('Cliente não encontrado para o AccountSid fornecido');
       }
 
-      // 2. Validação da mensagem
+      this.logger.log('3. Validando formato da mensagem');
       if (!this.isValidWebhookMessage(webhookData)) {
+        this.logger.warn('Mensagem inválida recebida.');
         await this.handleInvalidMessage(webhookData);
         return {
           success: false,
@@ -197,10 +199,12 @@ export class WhatsappService implements OnModuleInit {
         };
       }
 
-      // 3. Busca e validação da agenda
+      this.logger.log('4. Buscando agendamento por telefone');
       const appointment = await this.findAppointmentByPhone(webhookData.From);
-      
+      this.logger.log('5. Resultado da busca de agendamento: ' + JSON.stringify(appointment));
+
       if (!appointment) {
+        this.logger.warn('Nenhum agendamento encontrado para o telefone: ' + webhookData.From);
         await this.handleNoAppointmentFound(webhookData);
         return {
           success: false,
@@ -208,26 +212,27 @@ export class WhatsappService implements OnModuleInit {
         };
       }
 
-      // 4. Processamento da resposta
+      this.logger.log('6. Processando resposta do botão');
       if (webhookData.ButtonText) {
         await this.processButtonResponse(webhookData, Number(appointment.id));
       }
 
-      // 5. Registro do retorno
+      this.logger.log('7. Atualizando agendamento');
       await this.schedulerService.updateAppointment(Number(appointment.id), {
         lastInteraction: new Date(),
-        lastStatus: webhookData.MessageStatus,
+        lastStatus: webhookData.MessageStatus || webhookData.SmsStatus,
         lastResponse: webhookData.ButtonText || undefined,
       });
 
+      this.logger.log('8. Finalizando processamento com sucesso!');
       return {
         success: true,
         message: `Webhook processed for message ${webhookData.MessageSid}`,
-        status: webhookData.MessageStatus,
+        status: webhookData.MessageStatus || webhookData.SmsStatus,
         buttonResponse: webhookData.ButtonText
       };
     } catch (error) {
-      this.logger.error(`Erro ao processar webhook: ${error.message}`, error.stack);
+      this.logger.error('Erro no processamento: ' + error.message, error.stack);
       return {
         success: false,
         error: error.message,
@@ -236,10 +241,11 @@ export class WhatsappService implements OnModuleInit {
   }
 
   private isValidWebhookMessage(webhookData: WebhookRequestDto): boolean {
+    this.logger.debug('Validando campos da mensagem:', webhookData);
     return !!(
       webhookData.MessageSid &&
       webhookData.From &&
-      webhookData.MessageStatus
+      (webhookData.MessageStatus || webhookData.SmsStatus)  // Aceita tanto MessageStatus quanto SmsStatus
     );
   }
 
@@ -278,42 +284,69 @@ export class WhatsappService implements OnModuleInit {
   }
 
   private async findAppointmentByPhone(phone: string) {
+    this.logger.log(`Buscando agendamento para o telefone: ${phone}`);
+    
     // Remove o prefixo 'whatsapp:' e formata o número
     const formattedPhone = phone.replace('whatsapp:', '');
+    this.logger.log(`Número formatado para busca: ${formattedPhone}`);
     
-    const appointments = await this.schedulerService.getAppointments({
-      patientPhone: formattedPhone,
-      status: 'scheduled'
-    });
+    try {
+      const appointments = await this.schedulerService.getAppointments({
+        patientPhone: formattedPhone,
+        status: 'scheduled'
+      });
+      this.logger.log(`Agendamentos encontrados: ${JSON.stringify(appointments)}`);
 
-    return appointments[0] || null;
+      if (appointments.length === 0) {
+        this.logger.warn('Nenhum agendamento encontrado');
+        return null;
+      }
+
+      this.logger.log(`Retornando primeiro agendamento: ${JSON.stringify(appointments[0])}`);
+      return appointments[0];
+    } catch (error) {
+      this.logger.error(`Erro ao buscar agendamento: ${error.message}`);
+      throw error;
+    }
   }
 
   private async processButtonResponse(webhookData: WebhookRequestDto, appointmentId: number) {
-    const status = webhookData.ButtonText === 'Sim' ? 'confirmed' : 'cancelled';
+    this.logger.log(`Iniciando processamento de resposta do botão para agendamento ${appointmentId}`);
     
-    await this.schedulerService.updateAppointment(appointmentId, {
-      status,
-      confirmationDate: new Date(),
-      confirmationResponse: webhookData.ButtonText
-    });
+    const status = webhookData.ButtonText === 'Sim' ? 'confirmed' : 'cancelled';
+    this.logger.log(`Status definido como: ${status}`);
+    
+    try {
+      this.logger.log('Atualizando status do agendamento');
+      await this.schedulerService.updateAppointment(appointmentId, {
+        status,
+        confirmationDate: new Date(),
+        confirmationResponse: webhookData.ButtonText
+      });
+      this.logger.log('Status do agendamento atualizado com sucesso');
 
-    const notification: IAppointmentNotification = {
-      appointmentId,
-      patientName: '', // Será preenchido pelo serviço
-      patientPhone: webhookData.From,
-      appointmentDate: '', // Será preenchido pelo serviço
-      appointmentTime: '', // Será preenchido pelo serviço
-      response: webhookData.ButtonText,
-      messageId: webhookData.MessageSid,
-      receivedAt: new Date().toISOString()
-    };
+      const notification: IAppointmentNotification = {
+        appointmentId,
+        patientName: '', // Será preenchido pelo serviço
+        patientPhone: webhookData.From,
+        appointmentDate: '', // Será preenchido pelo serviço
+        appointmentTime: '', // Será preenchido pelo serviço
+        response: webhookData.ButtonText,
+        messageId: webhookData.MessageSid,
+        receivedAt: new Date().toISOString()
+      };
 
-    await this.queueService.addNotificationJob({
-      type: 'appointment_response',
-      data: notification,
-      priority: 1
-    });
+      this.logger.log('Adicionando notificação à fila');
+      await this.queueService.addNotificationJob({
+        type: 'appointment_response',
+        data: notification,
+        priority: 1
+      });
+      this.logger.log('Notificação adicionada à fila com sucesso');
+    } catch (error) {
+      this.logger.error(`Erro ao processar resposta do botão: ${error.message}`);
+      throw error; // Re-throw para ser capturado pelo try-catch do handleWebhook
+    }
   }
 
   /**

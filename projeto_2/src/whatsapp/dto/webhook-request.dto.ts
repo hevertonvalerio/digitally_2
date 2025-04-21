@@ -20,11 +20,19 @@ export class WebhookRequestDto {
   From: string;
 
   @ApiProperty({
-    description: 'Status da mensagem',
-    example: 'delivered',
-    enum: ['queued', 'sent', 'delivered', 'read', 'failed']
+    description: 'Status da mensagem SMS',
+    example: 'received',
+    enum: ['queued', 'sent', 'delivered', 'read', 'failed', 'received']
   })
-  MessageStatus: string;
+  SmsStatus: string;
+
+  @ApiProperty({
+    description: 'Status da mensagem (alternativo)',
+    example: 'delivered',
+    enum: ['queued', 'sent', 'delivered', 'read', 'failed'],
+    required: false
+  })
+  MessageStatus?: string;
 
   @ApiProperty({
     description: 'Texto do botão clicado (se houver)',
