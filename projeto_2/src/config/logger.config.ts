@@ -2,25 +2,39 @@ import * as winston from 'winston';
 import 'winston-daily-rotate-file';
 import * as path from 'path';
 
-const logDirectory = path.join(__dirname, '..', '..', 'logs'); // Caminho para a pasta logs na raiz de projeto_2
+const logDirectory = path.join(__dirname, '..', '..', 'logs');
 
-// Configuração do transporte para rotação diária de arquivos
-const dailyRotateFileTransport = new winston.transports.DailyRotateFile({
+// Formato comum para logs em arquivo
+const fileFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.json()
+);
+
+// Configuração do transporte para logs de requisições HTTP
+const requestsLogTransport = new winston.transports.DailyRotateFile({
   filename: path.join(logDirectory, 'requests-%DATE%.log'),
   datePattern: 'YYYY-MM-DD',
-  zippedArchive: true, // Compacta logs antigos
-  maxSize: '20m', // Tamanho máximo do arquivo de log
-  maxFiles: '14d', // Mantém logs por 14 dias
-  level: 'http', // Nível de log específico para requisições HTTP
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json(), // Formato JSON para fácil parse
-  ),
+  zippedArchive: true,
+  maxSize: '20m',
+  maxFiles: '14d',
+  level: 'http',
+  format: fileFormat,
 });
 
-// Configuração do transporte para o console (útil para desenvolvimento)
+// Configuração do transporte para logs da aplicação
+const appLogTransport = new winston.transports.DailyRotateFile({
+  filename: path.join(logDirectory, 'app-%DATE%.log'),
+  datePattern: 'YYYY-MM-DD',
+  zippedArchive: true,
+  maxSize: '20m',
+  maxFiles: '14d',
+  level: 'debug', // Captura todos os níveis de log da aplicação
+  format: fileFormat,
+});
+
+// Configuração do transporte para o console
 const consoleTransport = new winston.transports.Console({
-  level: 'info', // Nível de log para o console
+  level: 'debug', // Alterado para debug para capturar mais detalhes
   format: winston.format.combine(
     winston.format.colorize(),
     winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -33,16 +47,17 @@ const consoleTransport = new winston.transports.Console({
 // Criação da instância do logger
 export const logger = winston.createLogger({
   transports: [
-    dailyRotateFileTransport,
+    requestsLogTransport,
+    appLogTransport,
     // Adiciona o console transport apenas se não estiver em produção
     ...(process.env.NODE_ENV !== 'production' ? [consoleTransport] : []),
   ],
-  exitOnError: false, // Não encerra a aplicação em caso de erro no logger
+  exitOnError: false,
 });
 
-// Stream para uso com Morgan (opcional, mas útil para logs HTTP detalhados)
+// Stream para uso com Morgan
 export const loggerStream = {
   write: (message: string) => {
-    logger.http(message.trim()); // Usa o nível http para logs de requisição
+    logger.http(message.trim());
   },
 };
