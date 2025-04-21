@@ -150,17 +150,19 @@ export class SchedulerService {
         doc.on('data', (chunk: Buffer) => chunks.push(chunk));
         doc.on('end', () => resolve(Buffer.concat(chunks)));
 
+        // Cabeçalho
         doc.fontSize(20).text('Lista de Presença', { align: 'center' });
         doc.moveDown();
         doc.fontSize(14).text(`Data: ${format(new Date(date), 'dd/MM/yyyy', { locale: ptBR })}`, { align: 'center' });
         doc.moveDown();
 
         doc.fontSize(12).text('Clínica Médica', { align: 'center' });
-        doc.fontSize(10).text('CNPJ: XX.XXX.XXX/0001-XX', { align: 'center' });
+        doc.fontSize(10).text('cpf: XX.XXX.XXX/0001-XX', { align: 'center' });
         doc.moveDown();
 
         const tableTop = 200;
         const lineHeight = 25;
+        const pageWidth = doc.page.width - 100; // 50px de margem de cada lado
         const colWidths = {
           hora: 80,
           nome: 200,
@@ -168,38 +170,78 @@ export class SchedulerService {
           assinatura: 100
         };
 
-        doc.fontSize(10)
+        // Função auxiliar para desenhar linhas horizontais
+        const drawHorizontalLines = (startY: number, endY: number) => {
+          let y = startY;
+          while (y <= endY) {
+            doc.moveTo(50, y)
+               .lineTo(550, y)
+               .lineWidth(0.5)
+               .strokeColor('#CCCCCC')
+               .stroke();
+            y += lineHeight;
+          }
+        };
+
+        // Cabeçalho da tabela
+        doc.strokeColor('#000000')
+           .lineWidth(1)
+           .fontSize(10)
            .text('Horário', 50, tableTop)
            .text('Paciente', 130, tableTop)
            .text('Tipo Consulta', 330, tableTop)
            .text('Assinatura', 480, tableTop);
 
+        // Linha mais forte após o cabeçalho
         doc.moveTo(50, tableTop + 15)
            .lineTo(550, tableTop + 15)
+           .lineWidth(1)
+           .strokeColor('#000000')
            .stroke();
 
         let yPosition = tableTop + 30;
+        let currentPage = 1;
+
         appointments
           .sort((a, b) => a.appointmentTime.localeCompare(b.appointmentTime))
           .forEach((appointment, index) => {
             if (yPosition > 700) {
+              // Desenha linhas horizontais até o fim da página atual
+              drawHorizontalLines(yPosition - lineHeight, 700);
+              
               doc.addPage();
+              currentPage++;
               yPosition = 50;
+
+              // Desenha linhas horizontais na nova página
+              drawHorizontalLines(yPosition, 700);
             }
 
-            doc.fontSize(10)
+            // Se for primeira linha da página, desenha linhas horizontais do topo até aqui
+            if (index === 0 || yPosition === 50) {
+              drawHorizontalLines(yPosition, 700);
+            }
+
+            doc.strokeColor('#000000')
+               .lineWidth(1)
+               .fontSize(10)
                .text(appointment.appointmentTime, 50, yPosition)
                .text(appointment.patientName, 130, yPosition)
                .text(appointment.specialty, 330, yPosition);
 
+            // Linha para assinatura (mais escura)
             doc.moveTo(480, yPosition + lineHeight - 5)
                .lineTo(550, yPosition + lineHeight - 5)
+               .lineWidth(1)
+               .strokeColor('#000000')
                .stroke();
 
             yPosition += lineHeight;
           });
 
+        // Rodapé
         doc.fontSize(8)
+           .strokeColor('#000000')
            .text('Documento gerado automaticamente pelo sistema', 50, doc.page.height - 50, { align: 'center' });
 
         doc.end();
