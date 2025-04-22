@@ -7,10 +7,11 @@ import { SchedulerModule } from '../scheduler/scheduler.module';
 import { QueueModule } from '../common/queue/queue.module';
 import { ClientTokenModule } from '../common/guards/client-token.module';
 import { Client } from '../clients/entities/client.entity';
+import { Notification } from '../notifications/entities/notification.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Client]),
+    TypeOrmModule.forFeature([Client, Notification]),
     SchedulerModule,
     QueueModule,
     ClientTokenModule

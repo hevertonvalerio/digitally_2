@@ -100,7 +100,7 @@ async function cleanAndMigrate() {
         patientName: appointment.name,
         patientPhone: appointment.cellphone,
         cpf: appointment.document_id,
-        appointmentDate: new Date(appointment.appointment_date),
+        appointmentDate: appointment.appointment_date ? new Date(appointment.appointment_date) : undefined,
         appointmentTime: appointment.appointment_time,
         appointmentType: appointment.consultation_type === 'consultation' ? ('consultation' as const) : ('procedure' as const),
         specialty: 'Consulta Geral',

@@ -7,6 +7,7 @@ import { PhoneValidatorService } from '../common/services/phone-validator.servic
 import { SchedulerService } from '../scheduler/scheduler.service';
 import { QueueService } from '../common/queue/queue.service';
 import { Client } from '../clients/entities/client.entity';
+import { Notification } from '../notifications/entities/notification.entity';
 import { 
   IPAQueueJob, 
   IDiscardedMessage, 
@@ -25,6 +26,8 @@ export class WhatsappService implements OnModuleInit {
     private readonly queueService: QueueService,
     @InjectRepository(Client)
     private readonly clientRepository: Repository<Client>,
+    @InjectRepository(Notification)
+    private readonly notificationRepository: Repository<Notification>,
   ) {}
 
   onModuleInit() {
@@ -39,11 +42,6 @@ export class WhatsappService implements OnModuleInit {
     
     if (!client.twilioFromNumber) {
       throw new Error('Número do WhatsApp não configurado para o cliente');
-    }
-
-    // Valida formato do número
-    if (!client.twilioFromNumber.startsWith('+')) {
-      throw new Error('Número do WhatsApp deve começar com + e incluir código do país (ex: +5511999999999)');
     }
 
     this.logger.debug(`Configuração Twilio do cliente ${client.id}:
@@ -69,32 +67,18 @@ export class WhatsappService implements OnModuleInit {
 
   async sendInteractiveMessage(client: Client, to: string, text: string, buttons: Array<{ title: string; id: string }>) {
     try {
-      if (!this.phoneValidator.isCellPhone(to)) {
-        throw new BadRequestException('O número fornecido não é um celular válido');
-      }
-
-      // Formata o número para o padrão WhatsApp
-      const formattedNumber = this.phoneValidator.formatToWhatsApp(to);
       const [name, dateTime] = text.split('você confirma sua consulta para ');
       const [date, time] = dateTime.split(' às ');
 
       const twilioClient = this.getTwilioClient(client);
-      // Adiciona o prefixo whatsapp: se não existir
-      const fromNumber = client.twilioFromNumber.startsWith('whatsapp:') 
-        ? client.twilioFromNumber 
-        : `whatsapp:${client.twilioFromNumber}`;
-      
-      const toNumber = formattedNumber.startsWith('whatsapp:') 
-        ? formattedNumber 
-        : `whatsapp:${formattedNumber}`;
 
       // Extrai apenas a data e hora para as variáveis do template
       const dateStr = date.trim();
       const timeStr = time.replace('?', '').trim();
 
       this.logger.debug(`Enviando mensagem WhatsApp:
-        De: ${fromNumber}
-        Para: ${toNumber}
+        De: ${client.twilioFromNumber}
+        Para: ${to}
         ContentSid: ${process.env.TWILIO_CONTENT_SID}
         Variáveis: ${JSON.stringify({
           1: dateStr,
@@ -103,8 +87,8 @@ export class WhatsappService implements OnModuleInit {
       `);
 
       const message = await twilioClient.messages.create({
-        from: fromNumber,
-        to: toNumber,
+        from: `whatsapp:${client.twilioFromNumber}`,
+        to: `whatsapp:${to}`,
         contentSid: process.env.TWILIO_CONTENT_SID || '',
         contentVariables: JSON.stringify({
           1: dateStr,
@@ -112,10 +96,23 @@ export class WhatsappService implements OnModuleInit {
         })
       });
 
+      // Criar notificação inicial
+      const notification = new Notification();
+      notification.clientId = client.id;
+      notification.messageType = 'appointment_confirmation';
+      notification.status = 'sent';
+      notification.whatsappMessageId = message.sid;
+      notification.templateUsed = process.env.TWILIO_CONTENT_SID || '';
+      notification.sentAt = new Date();
+      notification.response = '';
+
+      const savedNotification = await this.notificationRepository.save(notification);
+
       this.logger.log(`Mensagem enviada com sucesso: ${message.sid}`);
       return {
         success: true,
         messageId: message.sid,
+        notificationId: savedNotification.id
       };
     } catch (error) {
       this.logger.error(`Erro ao enviar mensagem: ${error.message}`);
@@ -134,16 +131,11 @@ export class WhatsappService implements OnModuleInit {
     date: string;
     time: string;
   }) {
-    // Valida se é um número de celular antes de tentar enviar
-    if (!this.phoneValidator.isCellPhone(to)) {
-      throw new BadRequestException('O número fornecido não é um celular válido');
-    }
-
     // Criar o agendamento no banco de dados
     const newAppointment = {
       id: Date.now(), // Usando timestamp como ID numérico
       patientName: appointmentData.patientName,
-      patientPhone: this.phoneValidator.formatToWhatsApp(to),
+      patientPhone: to,
       appointmentDate: new Date(appointmentData.date),
       appointmentTime: appointmentData.time,
       status: 'scheduled' as const,
@@ -166,6 +158,18 @@ export class WhatsappService implements OnModuleInit {
 
     if (messageResult.success) {
       await this.schedulerService.markNotificationSent(Number(appointment.id));
+      
+      // Atualizar a notificação com o ID do agendamento
+      if (messageResult.notificationId) {
+        const notification = await this.notificationRepository.findOne({
+          where: { id: messageResult.notificationId }
+        });
+        
+        if (notification) {
+          notification.appointmentId = appointment.id;
+          await this.notificationRepository.save(notification);
+        }
+      }
     }
 
     return messageResult;
@@ -215,13 +219,23 @@ export class WhatsappService implements OnModuleInit {
       this.logger.log('6. Processando resposta do botão');
       if (webhookData.ButtonText) {
         await this.processButtonResponse(webhookData, Number(appointment.id));
+      } else if (webhookData.MessageStatus || webhookData.SmsStatus) {
+        // Atualizar status da notificação
+        const notification = await this.notificationRepository.findOne({
+          where: { whatsappMessageId: webhookData.MessageSid }
+        });
+
+        if (notification) {
+          notification.status = webhookData.MessageStatus || webhookData.SmsStatus;
+          await this.notificationRepository.save(notification);
+        }
       }
 
       this.logger.log('7. Atualizando agendamento');
       await this.schedulerService.updateAppointment(Number(appointment.id), {
         lastInteraction: new Date(),
         lastStatus: webhookData.MessageStatus || webhookData.SmsStatus,
-        lastResponse: webhookData.ButtonText || undefined,
+        lastResponse: webhookData.ButtonText || ''
       });
 
       this.logger.log('8. Finalizando processamento com sucesso!');
@@ -321,17 +335,35 @@ export class WhatsappService implements OnModuleInit {
       await this.schedulerService.updateAppointment(appointmentId, {
         status,
         confirmationDate: new Date(),
-        confirmationResponse: webhookData.ButtonText
+        confirmationResponse: webhookData.ButtonText || ''
       });
       this.logger.log('Status do agendamento atualizado com sucesso');
 
-      const notification: IAppointmentNotification = {
+      // Buscar a notificação mais recente para este número
+      const formattedPhone = webhookData.From.replace('whatsapp:', '');
+      const notification = await this.notificationRepository.findOne({
+        where: {
+          status: 'sent',
+          appointment: { patientPhone: formattedPhone }
+        },
+        order: { sentAt: 'DESC' },
+        relations: ['appointment']
+      });
+
+      if (notification) {
+        notification.status = 'responded';
+        notification.response = webhookData.ButtonText || '';
+        notification.responseAt = new Date();
+        await this.notificationRepository.save(notification);
+      }
+
+      const notificationData: IAppointmentNotification = {
         appointmentId,
         patientName: '', // Será preenchido pelo serviço
         patientPhone: webhookData.From,
         appointmentDate: '', // Será preenchido pelo serviço
         appointmentTime: '', // Será preenchido pelo serviço
-        response: webhookData.ButtonText,
+        response: webhookData.ButtonText || '',
         messageId: webhookData.MessageSid,
         receivedAt: new Date().toISOString()
       };
@@ -339,7 +371,7 @@ export class WhatsappService implements OnModuleInit {
       this.logger.log('Adicionando notificação à fila');
       await this.queueService.addNotificationJob({
         type: 'appointment_response',
-        data: notification,
+        data: notificationData,
         priority: 1
       });
       this.logger.log('Notificação adicionada à fila com sucesso');
