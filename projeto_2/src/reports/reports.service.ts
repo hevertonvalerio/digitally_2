@@ -90,11 +90,16 @@ export class ReportsService {
 
   async generateNoResponseReport(date: string): Promise<Buffer> {
     try {
+      // Busca agendamentos sem resposta ou sem WhatsApp
       const appointments = await this.databaseService.getAppointments({ 
         date,
-        status: 'scheduled',
-        notificationSent: true
+        notificationSent: true,
+        status: 'scheduled' // ainda não confirmados/cancelados
       });
+
+      if (appointments.length === 0) {
+        return this.generateEmptyReport('Relatório de Pacientes sem Resposta/WhatsApp', date);
+      }
 
       const reportData: INoResponseReport[] = appointments.map((apt: IAppointment) => ({
         name: apt.patientName,
@@ -104,18 +109,31 @@ export class ReportsService {
         time: apt.appointmentTime,
         specialty: apt.specialty,
         type: apt.appointmentType,
-        reason: !apt.patientPhone ? 'Sem registro telefônico' : 'Sem WhatsApp'
+        reason: this.determineNoResponseReason(apt)
       }));
 
       return this.generateReport(
-        'Relatório de Pacientes sem WhatsApp/Sem Resposta',
+        'Relatório de Pacientes sem Resposta/WhatsApp',
         reportData,
         'pdf'
       );
     } catch (error) {
-      this.logger.error(`Erro ao gerar relatório de pacientes sem resposta: ${error.message}`);
+      this.logger.error(`Erro ao gerar relatório de sem resposta: ${error.message}`);
       throw error;
     }
+  }
+
+  private determineNoResponseReason(appointment: IAppointment): 'Sem WhatsApp' | 'Sem registro telefônico' | 'Sem resposta' {
+    if (!appointment.patientPhone) {
+      return 'Sem registro telefônico';
+    }
+    
+    // Verifica se houve tentativa de envio mas sem sucesso (indica que não tem WhatsApp)
+    if (appointment.notificationSent && !appointment.notificationDate) {
+      return 'Sem WhatsApp';
+    }
+    
+    return 'Sem resposta';
   }
 
   private async generateEmptyReport(title: string, date: string): Promise<Buffer> {
@@ -390,5 +408,54 @@ export class ReportsService {
       this.logger.error(`Erro ao enviar relatório por e-mail: ${error.message}`);
       return false;
     }
+  }
+
+  async scheduleReportsGeneration(date: string): Promise<void> {
+    // Agenda geração dos relatórios para 24h após a data especificada
+    const reportTime = new Date(date);
+    reportTime.setHours(reportTime.getHours() + 24);
+
+    // Agenda os três relatórios
+    setTimeout(async () => {
+      try {
+        this.logger.log('Iniciando geração automática dos relatórios diários');
+        
+        // Gera os três relatórios
+        const [cancellationReport, confirmationReport, noResponseReport] = await Promise.all([
+          this.generateCancellationReport(date),
+          this.generateConfirmationReport(date),
+          this.generateNoResponseReport(date)
+        ]);
+
+        // Envia os relatórios por email
+        const businessEmail = this.configService.get<string>('BUSINESS_EMAIL');
+        if (businessEmail) {
+          await Promise.all([
+            this.emailService.sendReportEmail(
+              [businessEmail],
+              'Relatório de Cancelamentos',
+              cancellationReport,
+              'pdf'
+            ),
+            this.emailService.sendReportEmail(
+              [businessEmail],
+              'Relatório de Confirmações',
+              confirmationReport,
+              'pdf'
+            ),
+            this.emailService.sendReportEmail(
+              [businessEmail],
+              'Relatório de Pacientes sem Resposta/WhatsApp',
+              noResponseReport,
+              'pdf'
+            )
+          ]);
+        }
+
+        this.logger.log('Geração automática dos relatórios concluída com sucesso');
+      } catch (error) {
+        this.logger.error(`Erro na geração automática dos relatórios: ${error.message}`);
+      }
+    }, reportTime.getTime() - Date.now());
   }
 }

@@ -10,10 +10,13 @@ export interface IQueueJob<T> {
 }
 
 export interface IWhatsappQueueJob {
-  appointmentId: number;
+  phoneNumber: string;
   message: string;
-  retryCount?: number;
-  phoneNumber?: string;
+  appointmentId?: number;
+  clientId: number;
+  specialty?: string;
+  appointmentType?: 'Consultation' | 'Procedure';
+  examProtocol?: string;
 }
 
 export interface IReportQueueJob {
@@ -53,6 +56,7 @@ export interface INotificationJob {
 
 export interface IAppointmentNotification {
   appointmentId: number;
+  clientId: number;
   patientName: string;
   patientPhone: string;
   appointmentDate: string;

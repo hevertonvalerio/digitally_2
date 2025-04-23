@@ -80,16 +80,21 @@ export class NotificationProcessor {
       // Prepara a mensagem baseada no tipo de agendamento
       let message: string;
       if (appointmentData.appointmentType === 'Procedure') {
-        message = `Bom dia!\nO seu procedimento referente a ${appointmentData.specialty} está agendado para o dia ${appointmentData.appointmentDate}, às ${appointmentData.appointmentTime}. Deseja confirmar o procedimento?`;
+        message = `Olá ${appointmentData.patientName}! O seu procedimento referente a ${appointmentData.specialty} está agendado para o dia ${appointmentData.appointmentDate}, às ${appointmentData.appointmentTime}. Deseja confirmar o procedimento?`;
       } else {
-        message = `Bom dia!\nSua consulta referente a ${appointmentData.specialty} está agendada para o dia ${appointmentData.appointmentDate}, às ${appointmentData.appointmentTime}. Deseja confirmar a consulta?`;
+        message = `Olá ${appointmentData.patientName}! Sua consulta referente a ${appointmentData.specialty} está agendada para o dia ${appointmentData.appointmentDate}, às ${appointmentData.appointmentTime}. Deseja confirmar a consulta?`;
       }
 
       // Adiciona à fila de WhatsApp
       await this.queueService.addWhatsappJob({
         appointmentId: appointmentData.appointmentId,
         message,
-        retryCount: 0
+        retryCount: 0,
+        phoneNumber: appointmentData.patientPhone,
+        specialty: appointmentData.specialty,
+        appointmentType: appointmentData.appointmentType,
+        examProtocol: appointmentData.examProtocol,
+        clientId: appointmentData.clientId
       });
 
       // Marca notificação como enviada

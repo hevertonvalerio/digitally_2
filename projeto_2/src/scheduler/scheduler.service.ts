@@ -361,19 +361,20 @@ export class SchedulerService {
   async collectAppointmentsFor48Hours(): Promise<IAppointment[]> {
     this.logger.log('Coletando agendamentos para 48 horas à frente');
     
-    // Calcula a data de 48 horas à frente
-    const targetDate = addDays(new Date(), 2);
-    const targetDateStr = targetDate.toISOString().split('T')[0];
+    // Calcula o intervalo de datas (48 horas à frente)
+    const startDate = addDays(new Date(), 2);
+    const endDate = addDays(new Date(), 3);
     
     const options: ISchedulerOptions = {
-      date: targetDateStr,
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0],
       status: 'scheduled',
       notificationSent: false
     };
 
     try {
       const appointments = await this.databaseService.findAppointments(options);
-      this.logger.log(`Encontrados ${appointments.length} agendamentos para ${targetDateStr} (48 horas à frente)`);
+      this.logger.log(`Encontrados ${appointments.length} agendamentos entre ${options.startDate} e ${options.endDate}`);
       
       return appointments;
     } catch (error) {
@@ -387,33 +388,66 @@ export class SchedulerService {
    * @returns Lista de agendamentos para processamento
    */
   async collectAppointmentsFor40Hours(): Promise<IAppointment[]> {
-    this.logger.log('Coletando agendamentos para 40 horas à frente');
+    this.logger.log('Coletando agendamentos que acontecerão em 40 horas');
     
-    // Calcula a data de 40 horas à frente (aproximadamente 1.67 dias)
+    // Calcula o intervalo de datas (agendamentos que acontecerão em 40 horas)
     const targetDate = new Date();
-    targetDate.setHours(targetDate.getHours() + 40);
+    targetDate.setHours(targetDate.getHours() + 40); // Data alvo (40 horas à frente)
+    
+    // Janela de 1 hora para buscar agendamentos
+    const startDate = new Date(targetDate);
+    startDate.setHours(startDate.getHours() - 1);
+    const endDate = new Date(targetDate);
+    endDate.setHours(endDate.getHours() + 1);
+    
     const targetDateStr = targetDate.toISOString().split('T')[0];
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    
+    this.logger.log(`Buscando agendamentos próximos a ${targetDateStr} ${targetDate.getHours()}:${targetDate.getMinutes()}`);
+    this.logger.log(`Janela de busca: de ${startDateStr} ${startDate.getHours()}:${startDate.getMinutes()} até ${endDateStr} ${endDate.getHours()}:${endDate.getMinutes()}`);
     
     const options: ISchedulerOptions = {
-      date: targetDateStr,
+      startDate: startDateStr,
+      endDate: endDateStr,
       status: 'scheduled',
       notificationSent: false
     };
 
     try {
       const appointments = await this.databaseService.findAppointments(options);
-      this.logger.log(`Encontrados ${appointments.length} agendamentos para ${targetDateStr} (40 horas à frente)`);
+      
+      // Filtra os agendamentos considerando a hora
+      const filteredAppointments = appointments.filter(appointment => {
+        const appointmentDateTime = new Date(
+          `${appointment.appointmentDate}T${appointment.appointmentTime}`
+        );
+        return appointmentDateTime >= startDate && appointmentDateTime <= endDate;
+      });
+
+      this.logger.log(`Encontrados ${filteredAppointments.length} agendamentos próximos a ${targetDateStr}`);
       
       // Adiciona cada agendamento à fila de notificações
-      for (const appointment of appointments) {
+      for (const appointment of filteredAppointments) {
+        let appointmentDateStr: string;
+        const appointmentDate = appointment.appointmentDate as Date | string;
+        
+        if (appointmentDate instanceof Date) {
+          appointmentDateStr = appointmentDate.toISOString().split('T')[0];
+        } else {
+          appointmentDateStr = String(appointmentDate).split('T')[0];
+        }
+
         const notification: INotificationJob = {
           type: 'appointment_40h',
           data: {
       appointmentId: Number(appointment.id),
             patientName: appointment.patientName,
             patientPhone: appointment.patientPhone,
-            appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
+            appointmentDate: appointmentDateStr,
             appointmentTime: appointment.appointmentTime,
+            appointmentType: appointment.appointmentType === 'consultation' ? 'Consultation' : 'Procedure',
+            specialty: appointment.specialty,
             retryCount: 0
           },
           attempts: 3,
@@ -422,7 +456,7 @@ export class SchedulerService {
         await this.queueService.addNotificationJob(notification);
       }
       
-      return appointments;
+      return filteredAppointments;
     } catch (error) {
       this.logger.error('Erro ao coletar agendamentos para 40 horas:', error);
       throw error;

@@ -1,97 +1,187 @@
-import { Logger, Injectable, Optional } from '@nestjs/common';
-import { Job } from 'bull';
 import { Process, Processor } from '@nestjs/bull';
-import { IWhatsappQueueJob } from '../../interfaces/queue.interface';
-import { DatabaseService } from '../../services/database.service';
-import { SchedulerService } from '../../../scheduler/scheduler.service';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as twilio from 'twilio';
+import { Job } from 'bull';
+import { Twilio } from 'twilio';
+import { IWhatsappQueueJob } from '../../interfaces/queue.interface';
+import { QueueService } from '../queue.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Client } from '../../../clients/entities/client.entity';
 
-@Injectable()
 @Processor('whatsapp')
 export class WhatsappProcessor {
   private readonly logger = new Logger(WhatsappProcessor.name);
-  private readonly twilioClient: twilio.Twilio;
-  private readonly fromNumber: string;
+  private readonly twilioClient: Twilio;
+  private readonly twilioFromNumber: string;
+  private readonly twilioAccountSid: string;
+  private readonly twilioAuthToken: string;
 
   constructor(
-    @Optional() private readonly databaseService: DatabaseService,
-    @Optional() private readonly schedulerService: SchedulerService,
     private readonly configService: ConfigService,
+    private readonly queueService: QueueService,
+    @InjectRepository(Client)
+    private readonly clientRepository: Repository<Client>,
   ) {
     const accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
     const authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
     const fromNumber = this.configService.get<string>('TWILIO_FROM_NUMBER');
 
-    this.logger.debug(`Inicializando WhatsappProcessor com: SID=${accountSid}, FROM=${fromNumber}`);
-
     if (!accountSid || !authToken || !fromNumber) {
-      throw new Error('Credenciais do Twilio não configuradas');
+      this.logger.error('Missing Twilio credentials');
+      throw new Error('Missing Twilio credentials');
     }
 
-    this.twilioClient = twilio(accountSid, authToken);
-    this.fromNumber = fromNumber;
+    this.twilioAccountSid = accountSid;
+    this.twilioAuthToken = authToken;
+    this.twilioFromNumber = fromNumber;
+    this.twilioClient = new Twilio(accountSid, authToken);
+  }
+
+  private async getDocumentLink(clientId: number, examProtocolCode: string): Promise<string | null> {
+    try {
+      const client = await this.clientRepository.findOne({ where: { id: clientId } });
+      if (!client || !client.documents) {
+        this.logger.warn(`No documents found for client ${clientId}`);
+        return null;
+      }
+
+      const document = client.documents.find(doc => doc.cod === examProtocolCode);
+      if (!document) {
+        this.logger.warn(`Document with code ${examProtocolCode} not found for client ${clientId}`);
+        return null;
+      }
+
+      return document.link;
+    } catch (error) {
+      this.logger.error(`Error fetching document link: ${error.message}`);
+      return null;
+    }
   }
 
   @Process()
-  async process(job: Job<IWhatsappQueueJob>): Promise<void> {
-    const { appointmentId, message, retryCount = 0 } = job.data;
-    this.logger.debug(`Processando job WhatsApp para agendamento ${appointmentId}: ${message}`);
-
+  async process(job: Job<IWhatsappQueueJob>) {
     try {
-      const success = await this.sendWhatsappMessage(job);
-
-      if (!success && retryCount < 3 && this.schedulerService) {
-        this.logger.warn(`Tentando reenviar mensagem para agendamento ${appointmentId} (tentativa ${retryCount + 1})`);
-        await this.schedulerService.scheduleWhatsappNotification(
-          appointmentId,
-          message,
-          retryCount + 1
-        );
-      } else if (!success && retryCount < 3) {
-        this.logger.warn(`Não foi possível reagendar a mensagem WhatsApp para o agendamento ${appointmentId} porque o SchedulerService não está disponível`);
-      }
+      await this.sendWhatsappMessage(job.data);
     } catch (error) {
-      this.logger.error(`Erro ao processar mensagem WhatsApp: ${error.message}`, error.stack);
+      this.logger.error(`Error processing WhatsApp job: ${error.message}`);
       throw error;
     }
   }
 
-  private async sendWhatsappMessage(job: Job<IWhatsappQueueJob>): Promise<boolean> {
-    const { appointmentId, message, phoneNumber } = job.data;
-    try {
-      // Busca o número do paciente no job ou no banco de dados
-      let targetPhone: string;
-      
-      if (phoneNumber) {
-        targetPhone = phoneNumber;
-      } else {
-        if (!this.databaseService) {
-          throw new Error('DatabaseService não disponível');
-        }
+  async sendWhatsappMessage(job: IWhatsappQueueJob) {
+    if (!this.twilioClient || !this.twilioFromNumber) {
+      throw new Error('Twilio client not initialized');
+    }
 
-        const appointment = await this.databaseService.findAppointments({ id: appointmentId });
-        if (!appointment || !appointment[0] || !appointment[0].patientPhone) {
-          throw new Error(`Agendamento ${appointmentId} não encontrado ou sem número de telefone`);
-        }
-        targetPhone = appointment[0].patientPhone;
+    try {
+      const contentSid = this.configService.get<string>('TWILIO_CONTENT_SID');
+      if (!contentSid) {
+        throw new Error('TWILIO_CONTENT_SID not configured');
       }
 
-      this.logger.debug(`Enviando mensagem via Twilio para ${targetPhone}: ${message}`);
+      // Se for mensagem de cancelamento, envia diretamente
+      if (job.message.includes('agendamento foi desmarcado')) {
+        const result = await this.twilioClient.messages.create({
+          from: `whatsapp:${this.twilioFromNumber}`,
+          to: `whatsapp:${job.phoneNumber}`,
+          body: job.message,
+          statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
+        });
 
-      // Envia a mensagem via Twilio
-      const twilioMessage = await this.twilioClient.messages.create({
-        body: message,
-        from: `whatsapp:${this.fromNumber}`,
-        to: `whatsapp:${targetPhone}`
+        this.logger.log(`WhatsApp message sent successfully. SID: ${result.sid}`);
+
+        if (job.appointmentId) {
+          await this.queueService.markNotificationAsSent(job.appointmentId);
+        }
+
+        return result;
+      }
+
+      // Se for mensagem de confirmação com protocolo de exame
+      if (job.message.includes('Agradecemos o seu retorno') && job.examProtocol) {
+        // Busca o link do documento baseado no código do protocolo
+        const documentLink = await this.getDocumentLink(job.clientId, job.examProtocol);
+        
+        if (!documentLink) {
+          this.logger.error(`Document link not found for protocol ${job.examProtocol}`);
+          // Envia mensagem sem o anexo
+          const result = await this.twilioClient.messages.create({
+            from: `whatsapp:${this.twilioFromNumber}`,
+            to: `whatsapp:${job.phoneNumber}`,
+            body: job.message,
+            statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
+          });
+
+          this.logger.log(`WhatsApp message sent without document (not found). SID: ${result.sid}`);
+          return result;
+        }
+
+        const result = await this.twilioClient.messages.create({
+          from: `whatsapp:${this.twilioFromNumber}`,
+          to: `whatsapp:${job.phoneNumber}`,
+          body: job.message,
+          mediaUrl: [documentLink],
+          statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
+        });
+
+        this.logger.log(`WhatsApp message with exam protocol sent successfully. SID: ${result.sid}`);
+
+        if (job.appointmentId) {
+          await this.queueService.markNotificationAsSent(job.appointmentId);
+        }
+
+        return result;
+      }
+
+      // Para outras mensagens, continua com o processamento normal
+      const dateTimeMatch = job.message.match(/dia ([\d-]+), às ([\d:]+)/);
+      if (!dateTimeMatch) {
+        throw new Error('Data e hora não encontradas na mensagem');
+      }
+
+      const [_, date, time] = dateTimeMatch;
+
+      // Extrair o nome do paciente da mensagem
+      const nameMatch = job.message.match(/Olá (.*?)!/);
+      if (!nameMatch) {
+        throw new Error('Nome do paciente não encontrado na mensagem');
+      }
+
+      const patientName = nameMatch[1].trim();
+
+      this.logger.debug(`Enviando mensagem WhatsApp:
+        De: ${this.twilioFromNumber}
+        Para: ${job.phoneNumber}
+        ContentSid: ${contentSid}
+        Nome: ${patientName}
+        Data: ${date}
+        Hora: ${time}
+      `);
+
+      const result = await this.twilioClient.messages.create({
+        contentSid,
+        from: `whatsapp:${this.twilioFromNumber}`,
+        to: `whatsapp:${job.phoneNumber}`,
+        contentVariables: JSON.stringify({
+          "1": patientName,
+          "2": date.trim(),
+          "3": time.trim(),
+          "4": job.specialty || 'não especificada'
+        }),
+        statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
       });
 
-      this.logger.debug(`Resposta do Twilio: ${JSON.stringify(twilioMessage)}`);
-      this.logger.log(`Mensagem WhatsApp enviada com sucesso para agendamento ${appointmentId}`);
-      return true;
+      this.logger.log(`WhatsApp message sent successfully. SID: ${result.sid}`);
+
+      if (job.appointmentId) {
+        await this.queueService.markNotificationAsSent(job.appointmentId);
+      }
+
+      return result;
     } catch (error) {
-      this.logger.error(`Erro ao enviar mensagem WhatsApp: ${error.message}`, error.stack);
-      return false;
+      this.logger.error(`Failed to send WhatsApp message: ${error.message}`);
+      throw error;
     }
   }
 } 

@@ -28,6 +28,12 @@ export class Client {
   @Column({ name: 'twilio_templates', type: 'jsonb' })
   twilioTemplates: any;
 
+  @Column({ name: 'documents', type: 'jsonb', nullable: true })
+  documents: Array<{
+    cod: string;
+    link: string;
+  }>;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

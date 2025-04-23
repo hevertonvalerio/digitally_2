@@ -17,7 +17,7 @@ import { DatabaseService } from '../common/services/database.service';
         password: configService.get('POSTGRES_PASSWORD'),
         database: configService.get('POSTGRES_DB'),
         entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-        synchronize: true, // Ativar temporariamente para criar as tabelas
+        synchronize: false, // Ativar temporariamente para criar as tabelas
         logging: process.env.NODE_ENV === 'development',
         ssl: false
       }),

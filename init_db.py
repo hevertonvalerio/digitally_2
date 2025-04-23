@@ -15,7 +15,8 @@ def init_db():
         ('Maria Santos', '(11) 88888-8888', '55566677788', '2025-05-21', '10:00', 'Consulta'),
         ('Pedro Oliveira', '(11) 77777-7777', '99900011122', '2025-05-22', '15:45', 'Exame'),
         ('Ana Costa', '(11) 66666-6666', '33344455566', '2025-05-23', '09:15', 'Procedimento'),
-        ('Carlos Souza', '(11) 55555-5555', '77788899900', '2025-05-24', '11:30', 'Consulta')
+        ('Carlos Souza', '(11) 55555-5555', '77788899900', '2025-05-24', '11:30', 'Consulta'),
+        ('Gustavo Fugulin', '(11) 97565-7964', '43421731829', '2025-05-23', '14:30', 'Consulta')
     ]
 
     for nome, telefone, cpf, data_consulta, hora_consulta, tipo_consulta in dados_exemplo:

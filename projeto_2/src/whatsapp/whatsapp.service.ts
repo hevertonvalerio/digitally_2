@@ -13,6 +13,14 @@ import {
   IAppointmentNotification, 
   INotificationJob 
 } from '../common/interfaces/queue.interface';
+import { ConfigService } from '@nestjs/config';
+import { IAppointment } from '../common/interfaces/scheduler.interface';
+
+interface TwilioConfig {
+  twilioAccountSid: string;
+  twilioAuthToken: string;
+  twilioFromNumber: string;
+}
 
 @Injectable()
 export class WhatsappService implements OnModuleInit {
@@ -25,6 +33,7 @@ export class WhatsappService implements OnModuleInit {
     private readonly queueService: QueueService,
     @InjectRepository(Client)
     private readonly clientRepository: Repository<Client>,
+    private readonly configService: ConfigService,
   ) {}
 
   onModuleInit() {
@@ -52,19 +61,8 @@ export class WhatsappService implements OnModuleInit {
     `);
   }
 
-  private getTwilioClient(client: Client): twilio.Twilio {
-    this.validateTwilioConfig(client);
-
-    if (!this.clientsMap.has(client.id)) {
-      this.clientsMap.set(client.id, twilio(client.twilioAccountSid, client.twilioAuthToken));
-    }
-    
-    const twilioClient = this.clientsMap.get(client.id);
-    if (!twilioClient) {
-      throw new Error('Falha ao inicializar cliente Twilio');
-    }
-    
-    return twilioClient;
+  private getTwilioClient(config: TwilioConfig): twilio.Twilio {
+    return twilio(config.twilioAccountSid, config.twilioAuthToken);
   }
 
   async sendInteractiveMessage(client: Client, to: string, text: string, buttons: Array<{ title: string; id: string }>) {
@@ -78,7 +76,11 @@ export class WhatsappService implements OnModuleInit {
       const [name, dateTime] = text.split('você confirma sua consulta para ');
       const [date, time] = dateTime.split(' às ');
 
-      const twilioClient = this.getTwilioClient(client);
+      const twilioClient = this.getTwilioClient({
+        twilioAccountSid: client.twilioAccountSid,
+        twilioAuthToken: client.twilioAuthToken,
+        twilioFromNumber: client.twilioFromNumber
+      });
       // Adiciona o prefixo whatsapp: se não existir
       const fromNumber = client.twilioFromNumber.startsWith('whatsapp:') 
         ? client.twilioFromNumber 
@@ -109,7 +111,8 @@ export class WhatsappService implements OnModuleInit {
         contentVariables: JSON.stringify({
           1: dateStr,
           2: timeStr
-        })
+        }),
+        statusCallback: `${process.env.BASE_URL}/api/whatsapp/webhook`
       });
 
       this.logger.log(`Mensagem enviada com sucesso: ${message.sid}`);
@@ -214,7 +217,7 @@ export class WhatsappService implements OnModuleInit {
 
       this.logger.log('6. Processando resposta do botão');
       if (webhookData.ButtonText) {
-        await this.processButtonResponse(webhookData, Number(appointment.id));
+        await this.processButtonResponse(appointment, webhookData.ButtonText);
       }
 
       this.logger.log('7. Atualizando agendamento');
@@ -292,8 +295,7 @@ export class WhatsappService implements OnModuleInit {
     
     try {
       const appointments = await this.schedulerService.getAppointments({
-        patientPhone: formattedPhone,
-        status: 'scheduled'
+        patientPhone: formattedPhone
       });
       this.logger.log(`Agendamentos encontrados: ${JSON.stringify(appointments)}`);
 
@@ -302,50 +304,92 @@ export class WhatsappService implements OnModuleInit {
         return null;
       }
 
-      this.logger.log(`Retornando primeiro agendamento: ${JSON.stringify(appointments[0])}`);
-      return appointments[0];
+      // Retorna o agendamento mais recente
+      const sortedAppointments = appointments.sort((a, b) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      
+      this.logger.log(`Retornando agendamento mais recente: ${JSON.stringify(sortedAppointments[0])}`);
+      return sortedAppointments[0];
     } catch (error) {
       this.logger.error(`Erro ao buscar agendamento: ${error.message}`);
       throw error;
     }
   }
 
-  private async processButtonResponse(webhookData: WebhookRequestDto, appointmentId: number) {
-    this.logger.log(`Iniciando processamento de resposta do botão para agendamento ${appointmentId}`);
+  private async processButtonResponse(appointment: IAppointment, response: string): Promise<void> {
+    this.logger.log(`Iniciando processamento de resposta do botão para agendamento ${appointment.id}`);
     
-    const status = webhookData.ButtonText === 'Sim' ? 'confirmed' : 'cancelled';
-    this.logger.log(`Status definido como: ${status}`);
+    let status: 'confirmed' | 'cancelled' | 'scheduled' = 'scheduled';
+    let shouldSendResponse = false;
+    let responseMessage = '';
     
-    try {
-      this.logger.log('Atualizando status do agendamento');
-      await this.schedulerService.updateAppointment(appointmentId, {
+    if (response.toUpperCase() === 'SIM') {
+      status = 'confirmed';
+      shouldSendResponse = true;
+      
+      // Garante que appointmentDate seja um objeto Date válido
+      const appointmentDate = appointment.appointmentDate instanceof Date 
+        ? appointment.appointmentDate 
+        : new Date(appointment.appointmentDate);
+        
+      const formattedDate = appointmentDate.toLocaleDateString('pt-BR');
+      
+      responseMessage = `Agradecemos o seu retorno. O agendamento foi realizado para a data ${formattedDate}, às ${appointment.appointmentTime}.`;
+    } else if (response.toUpperCase() === 'NÃO') {
+      status = 'cancelled';
+      shouldSendResponse = true;
+      responseMessage = 'Agradecemos o seu retorno. O agendamento foi desmarcado. Caso queira marcar um novo agendamento, entre em contato com a unidade básica de saúde da sua região.';
+    }
+
+    this.logger.log(`Status definido como: ${status} para o agendamento ${appointment.id}`);
+
+    if (status !== 'scheduled') {
+      this.logger.log(`Atualizando status do agendamento ${appointment.id} para ${status}`);
+      
+      await this.schedulerService.updateAppointmentStatus(appointment.id, {
         status,
         confirmationDate: new Date(),
-        confirmationResponse: webhookData.ButtonText
+        confirmationResponse: response
       });
-      this.logger.log('Status do agendamento atualizado com sucesso');
+      
+      this.logger.log(`Status do agendamento atualizado com sucesso. Novo status: ${status}`);
+      
+      // Busca o agendamento atualizado
+      const updatedAppointment = await this.schedulerService.getAppointmentById(appointment.id);
+      this.logger.log(`Agendamento após atualização: ${JSON.stringify(updatedAppointment)}`);
 
-      const notification: IAppointmentNotification = {
-        appointmentId,
-        patientName: '', // Será preenchido pelo serviço
-        patientPhone: webhookData.From,
-        appointmentDate: '', // Será preenchido pelo serviço
-        appointmentTime: '', // Será preenchido pelo serviço
-        response: webhookData.ButtonText,
-        messageId: webhookData.MessageSid,
-        receivedAt: new Date().toISOString()
-      };
+      // Envia mensagem de retorno se necessário
+      if (shouldSendResponse && responseMessage) {
+        this.logger.log(`Enviando mensagem de retorno para ${appointment.patientPhone}`);
+        
+        try {
+          const twilioAccountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
+          const twilioAuthToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
+          const twilioFromNumber = this.configService.get<string>('TWILIO_FROM_NUMBER');
 
-      this.logger.log('Adicionando notificação à fila');
-      await this.queueService.addNotificationJob({
-        type: 'appointment_response',
-        data: notification,
-        priority: 1
-      });
-      this.logger.log('Notificação adicionada à fila com sucesso');
-    } catch (error) {
-      this.logger.error(`Erro ao processar resposta do botão: ${error.message}`);
-      throw error; // Re-throw para ser capturado pelo try-catch do handleWebhook
+          if (!twilioAccountSid || !twilioAuthToken || !twilioFromNumber) {
+            throw new Error('Configurações do Twilio não encontradas');
+          }
+
+          const twilioClient = this.getTwilioClient({
+            twilioAccountSid,
+            twilioAuthToken,
+            twilioFromNumber
+          });
+          
+          await twilioClient.messages.create({
+            from: `whatsapp:${twilioFromNumber}`,
+            to: `whatsapp:${appointment.patientPhone}`,
+            body: responseMessage
+          });
+          
+          this.logger.log('Mensagem de retorno enviada com sucesso');
+        } catch (error) {
+          this.logger.error(`Erro ao enviar mensagem de retorno: ${error.message}`);
+          throw error;
+        }
+      }
     }
   }
 

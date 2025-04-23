@@ -25,8 +25,10 @@ export interface IAppointment {
 
 export interface ISchedulerOptions {
   date?: string;
+  startDate?: string;
+  endDate?: string;
   time?: string;
-  status?: string;
+  status?: 'scheduled' | 'confirmed' | 'cancelled' | 'completed';
   notificationSent?: boolean;
   patientPhone?: string;
   id?: number;

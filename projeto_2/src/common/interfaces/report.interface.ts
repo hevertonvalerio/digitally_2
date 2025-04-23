@@ -11,7 +11,7 @@ export interface IReportBase {
 }
 
 export interface INoResponseReport extends IReportBase {
-  reason: 'Sem WhatsApp' | 'Sem registro telefônico';
+  reason: 'Sem WhatsApp' | 'Sem registro telefônico' | 'Sem resposta';
 }
 
 export interface IReportOptions {

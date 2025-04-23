@@ -22,6 +22,13 @@ export class DatabaseService {
       queryBuilder.andWhere('appointment.appointmentDate = :date', { date: options.date });
     }
     
+    if (options.startDate && options.endDate) {
+      queryBuilder.andWhere('appointment.appointmentDate BETWEEN :startDate AND :endDate', { 
+        startDate: options.startDate,
+        endDate: options.endDate
+      });
+    }
+    
     if (options.time) {
       queryBuilder.andWhere('appointment.appointmentTime = :time', { time: options.time });
     }

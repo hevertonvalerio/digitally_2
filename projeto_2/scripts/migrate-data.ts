@@ -31,7 +31,7 @@ async function migrateData() {
       password: process.env.POSTGRES_PASSWORD || 'postgres',
       database: process.env.POSTGRES_DB || 'projeto_digitaly',
       entities: [Client, Appointment, Notification],
-      synchronize: true,
+      synchronize: false,
     });
 
     // 1. Migrar clientes
