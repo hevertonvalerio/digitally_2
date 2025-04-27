@@ -70,6 +70,7 @@ export class SchedulerService {
           type: 'appointment',
           data: {
             appointmentId: Number(appointment.id),
+            clientId: appointment.clientId,
             patientName: appointment.patientName,
             patientPhone: appointment.patientPhone,
             appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
@@ -112,7 +113,8 @@ export class SchedulerService {
           const notification: INotificationJob = {
             type: 'appointment_40h',
             data: {
-            appointmentId: Number(appointment.id),
+              appointmentId: Number(appointment.id),
+              clientId: appointment.clientId,
               patientName: appointment.patientName,
               patientPhone: appointment.patientPhone,
               appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
@@ -274,6 +276,7 @@ export class SchedulerService {
           type: 'appointment',
           data: {
             appointmentId: Number(appointment.id),
+            clientId: appointment.clientId,
             patientName: appointment.patientName,
             patientPhone: appointment.patientPhone,
             appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
@@ -441,7 +444,8 @@ export class SchedulerService {
         const notification: INotificationJob = {
           type: 'appointment_40h',
           data: {
-      appointmentId: Number(appointment.id),
+            appointmentId: Number(appointment.id),
+            clientId: appointment.clientId,
             patientName: appointment.patientName,
             patientPhone: appointment.patientPhone,
             appointmentDate: appointmentDateStr,
@@ -483,6 +487,7 @@ export class SchedulerService {
       type: 'appointment_40h',
       data: {
         appointmentId: Number(appointment.id),
+        clientId: appointment.clientId,
         patientName: appointment.patientName,
         patientPhone: appointment.patientPhone,
         appointmentDate: appointment.date.toISOString().split('T')[0],

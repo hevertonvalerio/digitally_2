@@ -16,7 +16,7 @@ async function checkClientNumber() {
     database: process.env.POSTGRES_DB,
     entities: [Client, Appointment, Notification],
     synchronize: false,
-    ssl: false
+    ssl: true
   });
 
   try {

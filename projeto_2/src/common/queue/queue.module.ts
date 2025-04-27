@@ -8,11 +8,14 @@ import { NotificationProcessor } from './processors/notification.processor';
 import { SchedulerModule } from '../../scheduler/scheduler.module';
 import { BullModule } from '@nestjs/bull';
 import { CommonModule } from '../common.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Client } from '../../clients/entities/client.entity';
 
 @Module({
   imports: [
     ConfigModule,
     CommonModule,
+    TypeOrmModule.forFeature([Client]),
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
