@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { WhatsappService } from './whatsapp.service';
 import { ApiOperation, ApiResponse, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { GetClient } from '../common/decorators/get-client.decorator';
@@ -8,6 +8,7 @@ import { Client } from '../clients/entities/client.entity';
 import { WhatsappSuccessResponseDto, WhatsappErrorResponseDto } from './dto/whatsapp-response.dto';
 import { WebhookRequestDto } from './dto/webhook-request.dto';
 import { SendAppointmentConfirmationDto } from './dto/send-appointment-confirmation.dto';
+import { Request } from 'express';
 
 @ApiTags('whatsapp')
 @ApiSecurity('client-token')
@@ -74,7 +75,18 @@ export class WhatsappController {
       },
     },
   })
-  async handleWebhook(@Body() webhookData: WebhookRequestDto) {
-    return await this.whatsappService.handleWebhook(webhookData);
+  async handleWebhook(@Body() webhookData: WebhookRequestDto, @Req() request: Request) {
+    console.log('Webhook recebido:', JSON.stringify(webhookData, null, 2));
+    console.log('Headers:', JSON.stringify(request.headers, null, 2));
+    console.log('URL:', request.url);
+    
+    try {
+      const result = await this.whatsappService.handleWebhook(webhookData);
+      console.log('Resultado do processamento:', JSON.stringify(result, null, 2));
+      return result;
+    } catch (error) {
+      console.error('Erro no webhook:', error);
+      throw error;
+    }
   }
 }

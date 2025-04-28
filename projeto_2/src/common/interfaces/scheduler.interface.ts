@@ -21,6 +21,8 @@ export interface IAppointment {
   createdAt: Date;
   client?: any;
   notifications?: any[];
+  needsPreparation?: boolean;
+  preparationLink?: string;
 }
 
 export interface ISchedulerOptions {

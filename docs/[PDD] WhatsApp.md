@@ -120,10 +120,20 @@ Bom dia! Sua consulta referente a **Endocrinologia** está agendada para o dia *
 
 #### Resposta: **SIM**
 
-- Se o exame **tiver preparo**:
+##### Se o exame **tiver preparo**:
 > Agradecemos o seu retorno. O agendamento foi realizado para a data **dd/mm/aaaa**, às **hh:mmh**. Segue o preparo do exame.
 
-- Se **não tiver preparo**:
+-	No caso de agendamento referente ao procedimento “colonoscopia” (cód. 11380), deverá verificar se o agendamento é para o turno da manhã (8h -11:30h) ou para o turno da tarde (após 11:30h) para que o envio do protocolo seja de acordo com o turno agendado, deverá enviar um link para acessar o arquivo
+**Para o turno da tarde**: preparo_tarde_colonoscopia.pdf
+**Para o turno da manhã**: preparo_manhã_colonoscopia.pdf
+
+-	No caso de agendamento referente ao procedimento “Eletroencefalograma - Adulto” (cód.13480), deverá enviar um link para acessar o arquivo: preparo_adulto_eletroencefalograma.pdf
+
+- No caso de agendamento referente ao procedimento “Eletroencefalograma” (cód.13481), deverá enviar um link para acessar o arquivo: preparo_ped_eletroencefalograma.pdf
+
+- No caso de agendamento referente ao procedimento “Endoscopia” (cód.11381) deverá enviar um link para acessar o arquivo: preparo_endoscopia.pdf
+
+##### Se **não tiver preparo**:
 > Agradecemos o seu retorno. O agendamento foi realizado para a data **dd/mm/aaaa**, às **hh:mmh**.
 
 ---
@@ -160,7 +170,7 @@ Além disso, **armazenar os dados no Endpoint**:
 
 ### Passo 3
 
-Gerar 3 relatórios após 24h dos envios de mensagens e respostas:
+Gerar 3 relatórios **após 24h dos envios de mensagens e respostas**:
 
 1. **Pacientes que desmarcaram as consultas**:
     Deverá ser enviado por e-mail após 24 horas dos envios das mensagens e respostas dos pacientes. 
@@ -184,3 +194,36 @@ Gerar 3 relatórios após 24h dos envios de mensagens e respostas:
 
 **Fluxograma do Passo 3:**  
 ![Fluxograma Passo 3](docs\imgs_doc_PDD\imagem6.jpeg)
+
+
+### Passo 4
+Conforme mapeamento realizado com o colaborador da Santa Casa, o escopo referente a Consulta/Procedimento segue planilha de referência. Qualquer alteração deve ser informada.
+
+# ANEXO I - Planilha de referência
+
+| Especialidade                      | Código Interno/Agenda                | Tipo        |
+|-------------------------------------|--------------------------------------|-------------|
+| Doppler De Carótidas / Ecodoppler   | 17742                                | Procedimento|
+| Ultrassom Tireoide                  | 13368                                | Procedimento|
+| Ultrassom Urinária                  | 17783                                | Procedimento|
+| Ultrassom Articulação               | 17788                                | Procedimento|
+| Ultrassom Pélvica                   | 11817                                | Procedimento|
+| Ultrassom Próstata                  | 13518                                | Procedimento|
+| Ultrassom Transvaginal              | 13446                                | Procedimento|
+| Ecocardiograma                      | 13476                                | Procedimento|
+| Teste Ergométrico                   | 13479                                | Procedimento|
+| Fonoaudiologia - Hsra               | 11343                                | Procedimento|
+| Endoscopia                          | 11381                                | Procedimento|
+| Colonoscopia                        | 11380                                | Procedimento|
+| Eletroencefalograma - Adulto         | 13480                                | Procedimento|
+| Ecocardiograma                      | 18340                                | Procedimento|
+| Eletroencefalograma                  | 13481                                | Procedimento|
+| Cardiologia                         | Marcus Figueiredo Brodbeck           | Consulta    |
+| Nefrologia                          | Orlando Brunet Filho                 | Consulta    |
+| Otorrinolaringologia                | Camila Schreiber Bortolazza          | Consulta    |
+| Urologia                            | João Carlos Schneider Michelotto    | Consulta    |
+| Cardiologista Pediátrico            | Marcelo Credidio Dias Pinto          | Consulta    |
+| Endocrinologia/Metabologia          | Karina Da Silva Almeida              | Consulta    |
+| Dermatologista Pediátrico           | Rossana Spoladore                    | Consulta    |
+| Neuropediatria                      | Luiz Alberto Cagliati Santos         | Consulta    |
+| Otorrinolaringologia                | Rafael Souza Moraes                  | Consulta    |

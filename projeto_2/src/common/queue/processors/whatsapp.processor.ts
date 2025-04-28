@@ -46,7 +46,7 @@ export class WhatsappProcessor {
         return null;
       }
 
-      const document = client.documents.find(doc => doc.cod === examProtocolCode);
+      const document = client.documents.find((doc: { cod: string; link: string }) => doc.cod === examProtocolCode);
       if (!document) {
         this.logger.warn(`Document with code ${examProtocolCode} not found for client ${clientId}`);
         return null;

@@ -20,10 +20,25 @@ import { ReportsService } from '../reports/reports.service';
 import { EmailService } from '../common/services/email.service';
 import { ConfigService } from '@nestjs/config';
 import { IReportOptions } from '../common/interfaces/report.interface';
+import { getPreparationLinkFromDocuments } from '../common/util/preparation-link.util';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Client } from './../clients/entities/client.entity';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
+
+  private readonly PROCEDURES_WITH_PREPARATION: Record<string, { needsPreparation: boolean; preparationLink: string }> = {
+    '11380': { // Colonoscopia
+      needsPreparation: true,
+      preparationLink: process.env.COLONOSCOPY_PREPARATION_LINK || ''
+    },
+    '13480': { // Eletroencefalograma - Adulto
+      needsPreparation: true,
+      preparationLink: process.env.EEG_PREPARATION_LINK || ''
+    }
+  };
 
   constructor(
     private readonly queueService: QueueService,
@@ -32,6 +47,8 @@ export class SchedulerService {
     private readonly reportsService: ReportsService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    @InjectRepository(Client)
+    private readonly clientRepository: Repository<Client>,
   ) {}
 
   @Cron('1 0 * * *', {
@@ -322,34 +339,74 @@ export class SchedulerService {
     return this.updateAppointment(appointmentId, data);
   }
 
-  async createAppointment(appointment: IAppointment): Promise<IAppointment> {
-    this.logger.log(`Criando agendamento para ${appointment.patientName}`);
+  async createAppointment(appointmentData: Partial<IAppointment>): Promise<IAppointment> {
+    let preparationLink: string | undefined;
+    if (
+      appointmentData.appointmentType === 'procedure' &&
+      appointmentData.examProtocol &&
+      appointmentData.clientId
+    ) {
+      const client = await this.clientRepository.findOne({ where: { id: appointmentData.clientId } });
+      if (client && client.documents) {
+        preparationLink = getPreparationLinkFromDocuments(
+          client.documents,
+          appointmentData.examProtocol,
+          appointmentData.appointmentTime
+        );
+      }
+    }
+
+    if (preparationLink) {
+      appointmentData.needsPreparation = true;
+      appointmentData.preparationLink = preparationLink;
+    }
+
+    this.logger.log(`Criando agendamento para ${appointmentData.patientName}`);
     
     // Valida o número de telefone
-    if (!this.phoneValidator.isCellPhone(appointment.patientPhone)) {
-      this.logger.warn(`Número de telefone inválido para ${appointment.patientName}: ${appointment.patientPhone}`);
+    if (!appointmentData.patientPhone || !this.phoneValidator.isCellPhone(appointmentData.patientPhone)) {
+      this.logger.warn(`Número de telefone inválido para ${appointmentData.patientName}: ${appointmentData.patientPhone}`);
       
       // Notifica área de negócio sobre telefone inválido
       await this.queueService.addNotificationJob({
         type: 'error_alert',
         data: {
-          error: `Número de telefone inválido: ${appointment.patientPhone}`,
+          error: `Número de telefone inválido: ${appointmentData.patientPhone}`,
           process: 'appointment_creation',
           date: new Date().toISOString().split('T')[0]
         }
       });
-
-      throw new BadRequestException('Número de telefone inválido. Deve ser um celular no formato DDD9XXXXXXXX');
+      
+      throw new BadRequestException('Número de telefone inválido');
     }
 
     // Formata o número para o padrão WhatsApp
     try {
-      appointment.patientPhone = this.phoneValidator.formatToWhatsApp(appointment.patientPhone);
+      appointmentData.patientPhone = this.phoneValidator.formatToWhatsApp(appointmentData.patientPhone);
     } catch (error) {
       throw new BadRequestException('Erro ao formatar número de telefone: ' + error.message);
     }
 
-    return this.databaseService.createAppointment(appointment);
+    // Garante que todos os campos obrigatórios estejam presentes
+    const completeAppointment: IAppointment = {
+      id: appointmentData.id || Date.now(),
+      patientName: appointmentData.patientName || '',
+      patientPhone: appointmentData.patientPhone,
+      appointmentDate: appointmentData.appointmentDate || new Date(),
+      appointmentTime: appointmentData.appointmentTime || '',
+      status: appointmentData.status || 'scheduled',
+      notificationSent: appointmentData.notificationSent || false,
+      specialty: appointmentData.specialty || '',
+      appointmentType: appointmentData.appointmentType || 'consultation',
+      cpf: appointmentData.cpf || '',
+      clientId: appointmentData.clientId || 0,
+      createdAt: appointmentData.createdAt || new Date(),
+      examProtocol: appointmentData.examProtocol,
+      needsPreparation: appointmentData.needsPreparation || false,
+      preparationLink: appointmentData.preparationLink
+    };
+
+    return this.databaseService.createAppointment(completeAppointment);
   }
 
   async deleteAppointment(id: number): Promise<boolean> {
@@ -399,9 +456,9 @@ export class SchedulerService {
     
     // Janela de 1 hora para buscar agendamentos
     const startDate = new Date(targetDate);
-    startDate.setHours(startDate.getHours() - 1);
+    startDate.setHours(startDate.getHours() - 2);
     const endDate = new Date(targetDate);
-    endDate.setHours(endDate.getHours() + 1);
+    endDate.setHours(endDate.getHours() + 2);
     
     const targetDateStr = targetDate.toISOString().split('T')[0];
     const startDateStr = startDate.toISOString().split('T')[0];

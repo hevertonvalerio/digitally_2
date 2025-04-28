@@ -65,7 +65,7 @@ export class WhatsappService implements OnModuleInit {
     return twilio(config.twilioAccountSid, config.twilioAuthToken);
   }
 
-  async sendInteractiveMessage(client: Client, to: string, text: string, buttons: Array<{ title: string; id: string }>) {
+  async sendInteractiveMessage(client: Client, to: string, text: string, buttons: Array<{ title: string; id: string }>, appointmentType: 'procedure' | 'consultation' = 'consultation') {
     try {
       if (!this.phoneValidator.isCellPhone(to)) {
         throw new BadRequestException('O número fornecido não é um celular válido');
@@ -81,6 +81,7 @@ export class WhatsappService implements OnModuleInit {
         twilioAuthToken: client.twilioAuthToken,
         twilioFromNumber: client.twilioFromNumber
       });
+      
       // Adiciona o prefixo whatsapp: se não existir
       const fromNumber = client.twilioFromNumber.startsWith('whatsapp:') 
         ? client.twilioFromNumber 
@@ -94,13 +95,19 @@ export class WhatsappService implements OnModuleInit {
       const dateStr = date.trim();
       const timeStr = time.replace('?', '').trim();
 
+      const webhookUrl = process.env.BASE_URL ? `${process.env.BASE_URL}/api/whatsapp/webhook` : 'https://b138-187-37-84-52.ngrok-free.app/api/whatsapp/webhook';
+      
+      this.logger.debug(`Configurando webhook para: ${webhookUrl}`);
       this.logger.debug(`Enviando mensagem WhatsApp:
         De: ${fromNumber}
         Para: ${toNumber}
         ContentSid: ${process.env.TWILIO_CONTENT_SID}
+        Webhook URL: ${webhookUrl}
+        Tipo: ${appointmentType}
         Variáveis: ${JSON.stringify({
           1: dateStr,
-          2: timeStr
+          2: timeStr,
+          5: appointmentType === 'procedure' ? 'procedimento' : 'consulta'
         })}
       `);
 
@@ -110,9 +117,10 @@ export class WhatsappService implements OnModuleInit {
         contentSid: process.env.TWILIO_CONTENT_SID || '',
         contentVariables: JSON.stringify({
           1: dateStr,
-          2: timeStr
+          2: timeStr,
+          5: appointmentType === 'procedure' ? 'procedimento' : 'consulta'
         }),
-        statusCallback: `${process.env.BASE_URL}/api/whatsapp/webhook`
+        statusCallback: webhookUrl
       });
 
       this.logger.log(`Mensagem enviada com sucesso: ${message.sid}`);
@@ -136,6 +144,7 @@ export class WhatsappService implements OnModuleInit {
     patientName: string;
     date: string;
     time: string;
+    appointmentType?: 'procedure' | 'consultation';
   }) {
     // Valida se é um número de celular antes de tentar enviar
     if (!this.phoneValidator.isCellPhone(to)) {
@@ -152,7 +161,7 @@ export class WhatsappService implements OnModuleInit {
       status: 'scheduled' as const,
       notificationSent: false,
       specialty: 'Consulta Geral', // Valor padrão
-      appointmentType: 'consultation' as const, // Valor padrão
+      appointmentType: appointmentData.appointmentType || 'consultation',
       cpf: '', // Será preenchido posteriormente
       clientId: client.id,
       createdAt: new Date()
@@ -162,10 +171,16 @@ export class WhatsappService implements OnModuleInit {
 
     const text = `Olá ${appointmentData.patientName}, você confirma sua consulta para ${appointmentData.date} às ${appointmentData.time}?`;
     
-    const messageResult = await this.sendInteractiveMessage(client, to, text, [
-      { title: 'Sim', id: 'confirm_appointment' },
-      { title: 'Não', id: 'cancel_appointment' }
-    ]);
+    const messageResult = await this.sendInteractiveMessage(
+      client, 
+      to, 
+      text, 
+      [
+        { title: 'Sim', id: 'confirm_appointment' },
+        { title: 'Não', id: 'cancel_appointment' }
+      ],
+      appointmentData.appointmentType || 'consultation'
+    );
 
     if (messageResult.success) {
       await this.schedulerService.markNotificationSent(Number(appointment.id));
@@ -335,7 +350,53 @@ export class WhatsappService implements OnModuleInit {
         
       const formattedDate = appointmentDate.toLocaleDateString('pt-BR');
       
-      responseMessage = `Agradecemos o seu retorno. O agendamento foi realizado para a data ${formattedDate}, às ${appointment.appointmentTime}.`;
+      // Verifica se é um procedimento e tem código de exame
+      if (appointment.appointmentType === 'procedure' && appointment.examProtocol) {
+        this.logger.log(`Processando procedimento com protocolo: ${appointment.examProtocol}`);
+        
+        // Busca o cliente para acessar os documentos
+        const client = await this.clientRepository.findOne({
+          where: { id: appointment.clientId }
+        });
+
+        if (client?.documents) {
+          try {
+            const documents = typeof client.documents === 'string' 
+              ? JSON.parse(client.documents) 
+              : client.documents;
+
+            this.logger.log(`Documentos encontrados: ${JSON.stringify(documents)}`);
+            let preparationLink = '';
+
+            // Verifica se é colonoscopia (que tem links diferentes para manhã e tarde)
+            if (appointment.examProtocol === '11380') {
+              const hour = parseInt(appointment.appointmentTime.split(':')[0]);
+              const isMorning = hour >= 8 && hour <= 11.5;
+              preparationLink = documents[appointment.examProtocol]?.[isMorning ? 'manha' : 'tarde'];
+              this.logger.log(`Link de preparo para colonoscopia (${isMorning ? 'manhã' : 'tarde'}): ${preparationLink}`);
+            } else {
+              // Para outros exames, busca o link direto
+              preparationLink = documents[appointment.examProtocol];
+              this.logger.log(`Link de preparo para exame ${appointment.examProtocol}: ${preparationLink}`);
+            }
+
+            if (preparationLink) {
+              responseMessage = `Agradecemos o seu retorno. O agendamento foi realizado para a data ${formattedDate}, às ${appointment.appointmentTime}. Segue o preparo do exame: ${preparationLink}`;
+            } else {
+              responseMessage = `Agradecemos o seu retorno. O agendamento foi realizado para a data ${formattedDate}, às ${appointment.appointmentTime}.`;
+              this.logger.warn(`Link de preparo não encontrado para o protocolo: ${appointment.examProtocol}`);
+            }
+          } catch (error) {
+            this.logger.error(`Erro ao processar documentos: ${error.message}`);
+            responseMessage = `Agradecemos o seu retorno. O agendamento foi realizado para a data ${formattedDate}, às ${appointment.appointmentTime}.`;
+          }
+        } else {
+          responseMessage = `Agradecemos o seu retorno. O agendamento foi realizado para a data ${formattedDate}, às ${appointment.appointmentTime}.`;
+          this.logger.warn(`Documentos não encontrados para o cliente: ${appointment.clientId}`);
+        }
+      } else {
+        responseMessage = `Agradecemos o seu retorno. O agendamento foi realizado para a data ${formattedDate}, às ${appointment.appointmentTime}.`;
+      }
     } else if (response.toUpperCase() === 'NÃO') {
       status = 'cancelled';
       shouldSendResponse = true;
