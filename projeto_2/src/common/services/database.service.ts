@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { IAppointment, ISchedulerOptions } from '../interfaces/scheduler.interface';
 import { Appointment } from '../../scheduler/entities/appointment.entity';
+import { subHours } from 'date-fns';
 
 @Injectable()
 export class DatabaseService {
@@ -39,6 +40,13 @@ export class DatabaseService {
     
     if (options.notificationSent !== undefined) {
       queryBuilder.andWhere('appointment.notificationSent = :notificationSent', { notificationSent: options.notificationSent });
+    }
+
+    if (options.responseWithin === '24h') {
+      const twentyFourHoursAgo = subHours(new Date(), 24);
+      queryBuilder.andWhere('appointment.confirmationDate >= :twentyFourHoursAgo', { 
+        twentyFourHoursAgo 
+      });
     }
 
     return queryBuilder.getMany();

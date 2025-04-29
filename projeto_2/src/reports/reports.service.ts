@@ -26,9 +26,11 @@ export class ReportsService {
 
   async generateCancellationReport(date: string): Promise<Buffer> {
     try {
+      // Busca agendamentos cancelados nas últimas 24 horas
       const appointments = await this.databaseService.getAppointments({ 
         date,
-        status: 'cancelled'
+        status: 'cancelled',
+        responseWithin: '24h'
       });
 
       if (appointments.length === 0) {
@@ -41,8 +43,7 @@ export class ReportsService {
         phone: apt.patientPhone,
         date: apt.appointmentDate.toISOString().split('T')[0],
         time: apt.appointmentTime,
-        specialty: apt.specialty,
-        type: apt.appointmentType
+        specialty: apt.specialty
       }));
 
       return this.generateReport(
@@ -58,6 +59,7 @@ export class ReportsService {
 
   async generateConfirmationReport(date: string): Promise<Buffer> {
     try {
+      // Busca agendamentos confirmados nas últimas 24 horas
       const appointments = await this.databaseService.getAppointments({ 
         date,
         status: 'confirmed'
@@ -67,15 +69,21 @@ export class ReportsService {
         return this.generateEmptyReport('Relatório de Pacientes que Confirmaram', date);
       }
 
-      const reportData: IReportBase[] = appointments.map((apt: IAppointment) => ({
-        name: apt.patientName,
-        cpf: apt.cpf,
-        phone: apt.patientPhone,
-        date: apt.appointmentDate.toISOString().split('T')[0],
-        time: apt.appointmentTime,
-        specialty: apt.specialty,
-        type: apt.appointmentType
-      }));
+      const reportData: IReportBase[] = appointments.map((apt: IAppointment) => {
+        // Garante que a data seja uma string no formato correto
+        const formattedDate = apt.appointmentDate instanceof Date 
+          ? apt.appointmentDate.toISOString().split('T')[0]
+          : new Date(apt.appointmentDate).toISOString().split('T')[0];
+
+        return {
+          name: apt.patientName,
+          cpf: apt.cpf,
+          phone: apt.patientPhone,
+          date: formattedDate,
+          time: apt.appointmentTime,
+          specialty: apt.specialty
+        };
+      });
 
       return this.generateReport(
         'Relatório de Pacientes que Confirmaram',
@@ -90,11 +98,12 @@ export class ReportsService {
 
   async generateNoResponseReport(date: string): Promise<Buffer> {
     try {
-      // Busca agendamentos sem resposta ou sem WhatsApp
+      // Busca agendamentos sem resposta após 24 horas do envio
       const appointments = await this.databaseService.getAppointments({ 
         date,
         notificationSent: true,
-        status: 'scheduled' // ainda não confirmados/cancelados
+        status: 'scheduled',
+        noResponseAfter: '24h'
       });
 
       if (appointments.length === 0) {
@@ -108,7 +117,6 @@ export class ReportsService {
         date: apt.appointmentDate.toISOString().split('T')[0],
         time: apt.appointmentTime,
         specialty: apt.specialty,
-        type: apt.appointmentType,
         reason: this.determineNoResponseReason(apt)
       }));
 
@@ -123,14 +131,13 @@ export class ReportsService {
     }
   }
 
-  private determineNoResponseReason(appointment: IAppointment): 'Sem WhatsApp' | 'Sem registro telefônico' | 'Sem resposta' {
+  private determineNoResponseReason(appointment: IAppointment): string {
     if (!appointment.patientPhone) {
       return 'Sem registro telefônico';
     }
     
-    // Verifica se houve tentativa de envio mas sem sucesso (indica que não tem WhatsApp)
     if (appointment.notificationSent && !appointment.notificationDate) {
-      return 'Sem WhatsApp';
+      return 'Não tem WhatsApp';
     }
     
     return 'Sem resposta';
@@ -146,13 +153,13 @@ export class ReportsService {
         resolve(Buffer.concat(chunks));
       });
 
-      // Adiciona título em vermelho
+      // Título em vermelho
       doc.fontSize(24)
          .fillColor('red')
          .text(title, { align: 'center' });
       doc.moveDown();
 
-      // Adiciona data do relatório
+      // Data de geração
       doc.fillColor('black')
          .fontSize(12)
          .text(
@@ -166,45 +173,21 @@ export class ReportsService {
       const headers = ['Nome', 'CPF', 'Telefone', 'Data agendamento', 'Especialidade'];
       const rowHeight = 30;
       const colWidths = [
-        tableWidth * 0.25, // Nome
+        tableWidth * 0.3,  // Nome
         tableWidth * 0.15, // CPF
-        tableWidth * 0.2,  // Telefone
+        tableWidth * 0.15, // Telefone
         tableWidth * 0.2,  // Data agendamento
         tableWidth * 0.2   // Especialidade
       ];
 
-      let xPos = 50;
-      let yPos = doc.y;
+      // Desenha cabeçalho
+      this.drawTableHeader(doc, headers, colWidths, 50, doc.y);
 
-      // Desenha borda externa da tabela
-      doc.rect(xPos, yPos, tableWidth, rowHeight).stroke();
-
-      // Desenha cabeçalho com bordas
-      headers.forEach((header, i) => {
-        doc.rect(xPos, yPos, colWidths[i], rowHeight).stroke();
-        doc.fontSize(12).text(
-          header,
-          xPos,
-          yPos + 10,
-          {
-            width: colWidths[i],
-            align: 'center'
-          }
-        );
-        xPos += colWidths[i];
-      });
-
-      yPos += rowHeight;
-
-      // Desenha linha vazia com bordas para a mensagem
-      xPos = 50;
-      doc.rect(xPos, yPos, tableWidth, rowHeight).stroke();
-      
-      // Mensagem de nenhum registro centralizada
+      // Mensagem de nenhum registro
       doc.fontSize(12).text(
         `Nenhum registro encontrado para a data ${dateFormat(new Date(date), 'dd/MM/yyyy', { locale: ptBR })}`,
-        xPos,
-        yPos + 10,
+        50,
+        doc.y + 10,
         {
           width: tableWidth,
           align: 'center'
@@ -212,6 +195,31 @@ export class ReportsService {
       );
 
       doc.end();
+    });
+  }
+
+  private drawTableHeader(doc: PDFKit.PDFDocument, headers: string[], colWidths: number[], xPos: number, yPos: number): void {
+    const rowHeight = 30; // Definindo altura da linha
+    const tableWidth = doc.page.width - 100;
+
+    // Desenha borda externa da tabela
+    doc.rect(xPos, yPos, tableWidth, rowHeight).stroke();
+
+    // Desenha cabeçalho
+    headers.forEach((header, i) => {
+      // Desenha borda da célula
+      doc.rect(xPos, yPos, colWidths[i], rowHeight).stroke();
+      
+      doc.fontSize(12).text(
+        header,
+        xPos,
+        yPos + 10,
+        {
+          width: colWidths[i],
+          align: 'center'
+        }
+      );
+      xPos += colWidths[i];
     });
   }
 

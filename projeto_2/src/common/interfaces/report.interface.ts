@@ -1,5 +1,3 @@
-export type ReportFormat = 'pdf' | 'csv';
-
 export interface IReportBase {
   name: string;
   cpf: string;
@@ -7,38 +5,33 @@ export interface IReportBase {
   date: string;
   time: string;
   specialty: string;
-  type: 'consultation' | 'procedure';
+  type?: 'confirmation' | 'cancellation' | 'no-response';
 }
 
+export type ReportFormat = 'pdf' | 'csv';
+
 export interface INoResponseReport extends IReportBase {
-  reason: 'Sem WhatsApp' | 'Sem registro telefônico' | 'Sem resposta';
+  reason: string;
 }
 
 export interface IReportOptions {
-  startDate: string;
-  endDate: string;
-  format: ReportFormat;
-  emailTo: string[];
+  format: 'pdf' | 'csv';
+  date: string;
+  type: 'confirmation' | 'cancellation' | 'no-response';
 }
 
 export interface IReportGenerationResult {
   success: boolean;
-  fileName: string;
-  fileBuffer: Buffer;
+  buffer?: Buffer;
   error?: string;
-}
-
-export interface IEmailAttachment {
-  filename: string;
-  content: Buffer;
 }
 
 export interface IEmailOptions {
   to: string[];
   subject: string;
   body: string;
-  attachments?: {
+  attachments?: Array<{
     filename: string;
     content: Buffer;
-  }[];
+  }>;
 } 

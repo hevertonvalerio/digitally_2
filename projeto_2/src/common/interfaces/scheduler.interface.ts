@@ -32,6 +32,8 @@ export interface ISchedulerOptions {
   time?: string;
   status?: 'scheduled' | 'confirmed' | 'cancelled' | 'completed';
   notificationSent?: boolean;
+  responseWithin?: '24h' | '48h';
+  noResponseAfter?: '24h' | '48h';
   patientPhone?: string;
   id?: number;
 }
