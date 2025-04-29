@@ -2,41 +2,46 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { IEmailOptions } from '../interfaces/report.interface';
+import SMTPTransport from 'nodemailer/lib/smtp-transport';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private readonly transporter: nodemailer.Transporter;
+  private transporter: nodemailer.Transporter;
 
   constructor(private readonly configService: ConfigService) {
-    const emailUser = process.env.EMAIL_USER;
-    const emailPass = process.env.EMAIL_APP_PASSWORD;
+    const fromEmail = this.configService.get<string>('FROM_EMAIL');
+    const resendApiKey = this.configService.get<string>('RESEND_API_KEY');
 
-    this.logger.log(`Configurando serviço de email para: ${emailUser}`);
-
-    if (!emailUser || !emailPass) {
-      this.logger.error('Credenciais de email não configuradas corretamente');
+    this.logger.log(`Configurando serviço de email com Resend para: ${fromEmail}`);
+    
+    if (!fromEmail || !resendApiKey) {
+      this.logger.error('Credenciais do Resend não configuradas corretamente');
       return;
     }
 
-    // Configuração detalhada do Gmail
-    this.transporter = nodemailer.createTransport({
-      service: 'gmail',
-      host: 'smtp.gmail.com',
+    const transportConfig: SMTPTransport.Options = {
+      host: 'smtp.resend.com',
       port: 465,
       secure: true,
       auth: {
-        user: emailUser,
-        pass: emailPass
+        user: 'resend',
+        pass: resendApiKey
       },
-      debug: true, // Ativa logs detalhados
-      logger: true, // Ativa logs do nodemailer
       tls: {
-        rejectUnauthorized: false // Apenas para desenvolvimento
+        rejectUnauthorized: false
       }
-    });
+    };
 
-    // Verifica a configuração do transporter
+    this.logger.debug('Configurações de email:');
+    this.logger.debug(`Host: ${transportConfig.host}`);
+    this.logger.debug(`Porta: ${transportConfig.port}`);
+    this.logger.debug(`From Email: ${fromEmail}`);
+    this.logger.debug(`SSL/TLS: ${transportConfig.secure ? 'Ativo' : 'Inativo'}`);
+
+    this.transporter = nodemailer.createTransport(transportConfig);
+
+    // Testar a conexão imediatamente
     this.verifyTransporter();
   }
 
@@ -47,10 +52,16 @@ export class EmailService {
         return;
       }
 
-      await this.transporter.verify();
+      this.logger.debug('Iniciando verificação da conexão SMTP...');
+      
+      const testResult = await this.transporter.verify();
+      this.logger.debug('Resultado do teste de conexão:', testResult);
+      
       this.logger.log('Conexão com servidor de email verificada com sucesso');
     } catch (error) {
       this.logger.error(`Erro ao verificar conexão com servidor de email: ${error.message}`);
+      this.logger.debug('Stack trace completo:', error.stack);
+      
       if (error.response) {
         this.logger.error(`Detalhes adicionais: ${JSON.stringify(error.response)}`);
       }
@@ -63,12 +74,11 @@ export class EmailService {
         throw new Error('Serviço de email não está configurado corretamente');
       }
 
-      const emailUser = process.env.EMAIL_USER;
+      const fromEmail = this.configService.get<string>('FROM_EMAIL');
       this.logger.log(`Tentando enviar e-mail para: ${options.to.join(', ')}`);
-      this.logger.log(`Usando remetente: ${emailUser}`);
 
       const mailOptions = {
-        from: emailUser,
+        from: fromEmail,
         to: options.to.join(', '),
         subject: options.subject,
         html: options.body,
@@ -77,8 +87,6 @@ export class EmailService {
           content: attachment.content
         }))
       };
-
-      this.logger.log('Configurações do email:', JSON.stringify(mailOptions, null, 2));
 
       const info = await this.transporter.sendMail(mailOptions);
       this.logger.log(`E-mail enviado com sucesso. ID: ${info.messageId}`);

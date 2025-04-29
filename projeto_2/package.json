@@ -51,6 +51,7 @@
     "prettier": "^3.0.0",
     "redis-server": "^1.2.2",
     "reflect-metadata": "^0.1.13",
+    "resend": "^4.4.1",
     "rxjs": "^7.8.2",
     "source-map-support": "^0.5.21",
     "sqlite": "^5.1.1",
