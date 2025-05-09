@@ -17,6 +17,10 @@ export interface IWhatsappQueueJob {
   specialty?: string;
   appointmentType?: 'Consultation' | 'Procedure';
   examProtocol?: string;
+  patientName: string;
+  procedureOrType: string;
+  date: string;
+  time: string;
 }
 
 export interface IReportQueueJob {

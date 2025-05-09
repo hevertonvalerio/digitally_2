@@ -76,11 +76,11 @@ export class ReportsService {
           : new Date(apt.appointmentDate).toISOString().split('T')[0];
 
         return {
-          name: apt.patientName,
-          cpf: apt.cpf,
-          phone: apt.patientPhone,
+        name: apt.patientName,
+        cpf: apt.cpf,
+        phone: apt.patientPhone,
           date: formattedDate,
-          time: apt.appointmentTime,
+        time: apt.appointmentTime,
           specialty: apt.specialty
         };
       });
@@ -182,7 +182,7 @@ export class ReportsService {
 
       // Desenha cabeçalho
       this.drawTableHeader(doc, headers, colWidths, 50, doc.y);
-
+      
       // Mensagem de nenhum registro
       doc.fontSize(12).text(
         `Nenhum registro encontrado para a data ${dateFormat(new Date(date), 'dd/MM/yyyy', { locale: ptBR })}`,

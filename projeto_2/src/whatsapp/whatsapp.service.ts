@@ -176,8 +176,8 @@ export class WhatsappService implements OnModuleInit {
       to, 
       text, 
       [
-        { title: 'Sim', id: 'confirm_appointment' },
-        { title: 'Não', id: 'cancel_appointment' }
+      { title: 'Sim', id: 'confirm_appointment' },
+      { title: 'Não', id: 'cancel_appointment' }
       ],
       appointmentData.appointmentType || 'consultation'
     );
@@ -446,7 +446,7 @@ export class WhatsappService implements OnModuleInit {
           });
           
           this.logger.log('Mensagem de retorno enviada com sucesso');
-        } catch (error) {
+    } catch (error) {
           this.logger.error(`Erro ao enviar mensagem de retorno: ${error.message}`);
           throw error;
         }

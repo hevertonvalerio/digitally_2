@@ -160,14 +160,15 @@ export class WhatsappProcessor {
       `);
 
       const result = await this.twilioClient.messages.create({
-        contentSid,
-        from: `whatsapp:${this.twilioFromNumber}`,
+        messagingServiceSid: 'MG52975d494649f1b59aea25295e29e2b0',
         to: `whatsapp:${job.phoneNumber}`,
+        contentSid: 'HXae76698eafa48856859c29746d5b7729',
         contentVariables: JSON.stringify({
-          "1": patientName,
-          "2": date.trim(),
-          "3": time.trim(),
-          "4": job.specialty || 'não especificada'
+          "1": job.patientName,
+          "2": job.procedureOrType,
+          "3": job.specialty,
+          "4": job.date,
+          "5": job.time
         }),
         statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
       });
