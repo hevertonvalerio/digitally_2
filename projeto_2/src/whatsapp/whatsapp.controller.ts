@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req, Logger } from '@nestjs/common';
 import { WhatsappService } from './whatsapp.service';
 import { ApiOperation, ApiResponse, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { GetClient } from '../common/decorators/get-client.decorator';
@@ -15,6 +15,8 @@ import { Request } from 'express';
 @UseGuards(ClientTokenGuard)
 @Controller('whatsapp')
 export class WhatsappController {
+  private readonly logger = new Logger(WhatsappController.name);
+
   constructor(private readonly whatsappService: WhatsappService) {}
 
   @Post('confirm-appointment')
@@ -75,18 +77,18 @@ export class WhatsappController {
       },
     },
   })
-  async handleWebhook(@Body() webhookData: WebhookRequestDto, @Req() request: Request) {
-    console.log('Webhook recebido:', JSON.stringify(webhookData, null, 2));
-    console.log('Headers:', JSON.stringify(request.headers, null, 2));
-    console.log('URL:', request.url);
-    
-    try {
-      const result = await this.whatsappService.handleWebhook(webhookData);
-      console.log('Resultado do processamento:', JSON.stringify(result, null, 2));
-      return result;
-    } catch (error) {
-      console.error('Erro no webhook:', error);
-      throw error;
+  async handleWebhook(@Body() body: any) {
+    const { MessageStatus, Body } = body;
+
+    if (MessageStatus) {
+      // Callback de status (enviado/entregue/...)
+      this.logger.debug(`Status da mensagem: ${MessageStatus}`);
+    } else {
+      // Mensagem recebida do paciente
+      this.logger.debug(`Mensagem recebida: ${Body}`);
     }
+
+    // Sempre retorna 200 para evitar erro 11200
+    return { status: 'ok' };
   }
 }

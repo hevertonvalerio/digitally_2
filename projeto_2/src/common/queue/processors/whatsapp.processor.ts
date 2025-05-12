@@ -69,120 +69,87 @@ export class WhatsappProcessor {
     }
   }
 
-  async sendWhatsappMessage(job: IWhatsappQueueJob) {
-    if (!this.twilioClient || !this.twilioFromNumber) {
-      throw new Error('Twilio client not initialized');
-    }
-
+  private async sendWhatsappMessage(job: IWhatsappQueueJob): Promise<void> {
     try {
-      const contentSid = this.configService.get<string>('TWILIO_CONTENT_SID');
-      if (!contentSid) {
-        throw new Error('TWILIO_CONTENT_SID not configured');
-      }
-
-      // Se for mensagem de cancelamento, envia diretamente
-      if (job.message.includes('agendamento foi desmarcado')) {
-        const result = await this.twilioClient.messages.create({
-          from: `whatsapp:${this.twilioFromNumber}`,
-          to: `whatsapp:${job.phoneNumber}`,
-          body: job.message,
-          statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
-        });
-
-        this.logger.log(`WhatsApp message sent successfully. SID: ${result.sid}`);
-
-        if (job.appointmentId) {
-          await this.queueService.markNotificationAsSent(job.appointmentId);
-        }
-
-        return result;
-      }
-
-      // Se for mensagem de confirmação com protocolo de exame
-      if (job.message.includes('Agradecemos o seu retorno') && job.examProtocol) {
-        // Busca o link do documento baseado no código do protocolo
-        const documentLink = await this.getDocumentLink(job.clientId, job.examProtocol);
+      // Determina o tipo de mensagem baseado no conteúdo
+      const isTemplate = job.message.includes('Bom dia!') || job.message.includes('Boa tarde!');
+      
+      if (isTemplate) {
+        // Para mensagens de template (confirmação de agendamento)
+        const contentSid = 'HXae76698eafa48856859c29746d5b7729';
         
-        if (!documentLink) {
-          this.logger.error(`Document link not found for protocol ${job.examProtocol}`);
-          // Envia mensagem sem o anexo
-          const result = await this.twilioClient.messages.create({
-            from: `whatsapp:${this.twilioFromNumber}`,
-            to: `whatsapp:${job.phoneNumber}`,
-            body: job.message,
-            statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
-          });
-
-          this.logger.log(`WhatsApp message sent without document (not found). SID: ${result.sid}`);
-          return result;
+        // Verifica se é procedimento com preparo
+        const hasPreparation = job.procedureOrType && job.examProtocol;
+        let preparationLink = null;
+        
+        if (hasPreparation && job.examProtocol) {
+          preparationLink = await this.getDocumentLink(job.clientId, job.examProtocol);
+          
+          // Ajusta o link do preparo baseado no tipo de procedimento
+          switch (job.examProtocol) {
+            case '11380': // Colonoscopia
+              const appointmentHour = parseInt(job.time.split(':')[0]);
+              const isMorning = appointmentHour >= 8 && appointmentHour < 11.5;
+              preparationLink = isMorning ? 
+                'preparo_manha_colonoscopia.pdf' : 
+                'preparo_tarde_colonoscopia.pdf';
+              break;
+            
+            case '13480': // Eletroencefalograma - Adulto
+              preparationLink = 'preparo_adulto_eletroencefalograma.pdf';
+              break;
+            
+            case '13481': // Eletroencefalograma
+              preparationLink = 'preparo_ped_eletroencefalograma.pdf';
+              break;
+            
+            case '11381': // Endoscopia
+              preparationLink = 'preparo_endoscopia.pdf';
+              break;
+          }
         }
 
+        this.logger.debug(`Enviando mensagem WhatsApp (template):\n  De: ${this.twilioFromNumber}\n  Para: ${job.phoneNumber}\n  ContentSid: ${contentSid}\n  Variáveis: ${JSON.stringify({
+          '1': job.patientName,
+          '2': job.procedureOrType,
+          '3': job.specialty,
+          '4': job.date,
+          '5': job.time,
+          '6': hasPreparation ? 'Sim' : 'Não',
+          '7': preparationLink || ''
+        })}`);
+
         const result = await this.twilioClient.messages.create({
-          from: `whatsapp:${this.twilioFromNumber}`,
+          messagingServiceSid: 'MG52975d494649f1b59aea25295e29e2b0',
           to: `whatsapp:${job.phoneNumber}`,
-          body: job.message,
-          mediaUrl: [documentLink],
+          contentSid: contentSid,
+          contentVariables: JSON.stringify({
+            '1': job.patientName,
+            '2': job.procedureOrType,
+            '3': job.specialty,
+            '4': job.date,
+            '5': job.time,
+            '6': hasPreparation ? 'Sim' : 'Não',
+            '7': preparationLink || ''
+          }),
           statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
         });
 
-        this.logger.log(`WhatsApp message with exam protocol sent successfully. SID: ${result.sid}`);
+        this.logger.debug(`Mensagem WhatsApp (template) enviada com sucesso: ${result.sid}`);
+      } else {
+        // Para mensagens livres (cancelamento, etc)
+        const result = await this.twilioClient.messages.create({
+          messagingServiceSid: 'MG52975d494649f1b59aea25295e29e2b0',
+          to: `whatsapp:${job.phoneNumber}`,
+          body: job.message,
+          statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
+        });
 
-        if (job.appointmentId) {
-          await this.queueService.markNotificationAsSent(job.appointmentId);
-        }
-
-        return result;
+        this.logger.debug(`Mensagem WhatsApp (livre) enviada com sucesso: ${result.sid}`);
       }
-
-      // Para outras mensagens, continua com o processamento normal
-      const dateTimeMatch = job.message.match(/dia ([\d-]+), às ([\d:]+)/);
-      if (!dateTimeMatch) {
-        throw new Error('Data e hora não encontradas na mensagem');
-      }
-
-      const [_, date, time] = dateTimeMatch;
-
-      // Extrair o nome do paciente da mensagem
-      const nameMatch = job.message.match(/Olá (.*?)!/);
-      if (!nameMatch) {
-        throw new Error('Nome do paciente não encontrado na mensagem');
-      }
-
-      const patientName = nameMatch[1].trim();
-
-      this.logger.debug(`Enviando mensagem WhatsApp:
-        De: ${this.twilioFromNumber}
-        Para: ${job.phoneNumber}
-        ContentSid: ${contentSid}
-        Nome: ${patientName}
-        Data: ${date}
-        Hora: ${time}
-      `);
-
-      const result = await this.twilioClient.messages.create({
-        messagingServiceSid: 'MG52975d494649f1b59aea25295e29e2b0',
-        to: `whatsapp:${job.phoneNumber}`,
-        contentSid: 'HXae76698eafa48856859c29746d5b7729',
-        contentVariables: JSON.stringify({
-          "1": job.patientName,
-          "2": job.procedureOrType,
-          "3": job.specialty,
-          "4": job.date,
-          "5": job.time
-        }),
-        statusCallback: `${this.configService.get('BASE_URL')}/api/whatsapp/webhook`
-      });
-
-      this.logger.log(`WhatsApp message sent successfully. SID: ${result.sid}`);
-
-      if (job.appointmentId) {
-        await this.queueService.markNotificationAsSent(job.appointmentId);
-      }
-
-      return result;
     } catch (error) {
-      this.logger.error(`Failed to send WhatsApp message: ${error.message}`);
+      this.logger.error(`Erro ao enviar mensagem WhatsApp: ${error.message}`, error.stack);
       throw error;
     }
   }
-} 
+}
