@@ -65,7 +65,7 @@ export class WhatsappService implements OnModuleInit {
     return twilio(config.twilioAccountSid, config.twilioAuthToken);
   }
 
-  async sendInteractiveMessage(client: Client, to: string, text: string, buttons: Array<{ title: string; id: string }>, appointmentType: 'procedure' | 'consultation' = 'consultation') {
+  async sendInteractiveMessage(client: Client, to: string, text: string, buttons: Array<{ title: string; id: string }>, appointmentType: 'procedure' | 'consultation' = 'consultation', patientName: string = '', specialty: string = '') {
     try {
       if (!this.phoneValidator.isCellPhone(to)) {
         throw new BadRequestException('O número fornecido não é um celular válido');
@@ -73,8 +73,34 @@ export class WhatsappService implements OnModuleInit {
 
       // Formata o número para o padrão WhatsApp
       const formattedNumber = this.phoneValidator.formatToWhatsApp(to);
-      const [name, dateTime] = text.split('você confirma sua consulta para ');
-      const [date, time] = dateTime.split(' às ');
+      
+      // Extrair data e hora do texto da mensagem, considerando os diferentes tipos de agendamento
+      let dateStr = '';
+      let timeStr = '';
+      
+      // Extrair data e hora do texto da mensagem
+      if (text.includes('você confirma seu procedimento para')) {
+        const [_, dateTime] = text.split('você confirma seu procedimento para ');
+        if (dateTime) {
+          const [datePart, timePart] = dateTime.split(' às ');
+          dateStr = datePart.trim();
+          timeStr = timePart ? timePart.replace('?', '').trim() : '';
+        }
+      } else if (text.includes('você confirma sua consulta para')) {
+        const [_, dateTime] = text.split('você confirma sua consulta para ');
+        if (dateTime) {
+          const [datePart, timePart] = dateTime.split(' às ');
+          dateStr = datePart.trim();
+          timeStr = timePart ? timePart.replace('?', '').trim() : '';
+        }
+      } else {
+        // Fallback para outros formatos de texto
+        const matches = text.match(/para ([0-9/]+) às ([0-9:]+)\??/);
+        if (matches && matches.length >= 3) {
+          dateStr = matches[1].trim();
+          timeStr = matches[2].trim();
+        }
+      }
 
       const twilioClient = this.getTwilioClient({
         twilioAccountSid: client.twilioAccountSid,
@@ -91,34 +117,78 @@ export class WhatsappService implements OnModuleInit {
         ? formattedNumber 
         : `whatsapp:${formattedNumber}`;
 
-      // Extrai apenas a data e hora para as variáveis do template
-      const dateStr = date.trim();
-      const timeStr = time.replace('?', '').trim();
-
-      const webhookUrl = process.env.BASE_URL ? `${process.env.BASE_URL}/api/whatsapp/webhook` : 'https://b138-187-37-84-52.ngrok-free.app/api/whatsapp/webhook';
+      const baseUrl = process.env.BASE_URL || 'https://4d2d-177-23-123-9.ngrok-free.app';
+      const webhookUrl = `${baseUrl}/api/whatsapp/webhook`;
       
-      this.logger.debug(`Configurando webhook para: ${webhookUrl}`);
-      this.logger.debug(`Enviando mensagem WhatsApp:
+      this.logger.log(`Configurando webhook para: ${webhookUrl}`);
+      this.logger.log(`Enviando mensagem WhatsApp:
         De: ${fromNumber}
         Para: ${toNumber}
         ContentSid: ${process.env.TWILIO_CONTENT_SID}
         Webhook URL: ${webhookUrl}
         Tipo: ${appointmentType}
         Variáveis: ${JSON.stringify({
-          1: dateStr,
-          2: timeStr,
-          5: appointmentType === 'procedure' ? 'procedimento' : 'consulta'
-        })}
-      `);
+          1: patientName,
+          2: appointmentType === 'procedure' ? 'procedimento' : 'consulta',
+          3: specialty,
+          4: dateStr,
+          5: timeStr
+        })}`);
+      
+      // Garantir que o webhook está configurado corretamente
+      try {
+        // Verificar se o webhook já está configurado para este número
+        const services = await twilioClient.messaging.v1.services.list();
+        let serviceFound = false;
+        
+        for (const service of services) {
+          if (service.friendlyName === 'Digitaly Webhook Service') {
+            serviceFound = true;
+            this.logger.log(`Serviço de webhook já existe: ${service.sid}`);
+            
+            // Atualizar o webhook URL
+            await twilioClient.messaging.v1.services(service.sid).update({
+              inboundRequestUrl: webhookUrl,
+              statusCallback: webhookUrl
+            });
+            
+            this.logger.log(`Webhook URL atualizado para: ${webhookUrl}`);
+            break;
+          }
+        }
+        
+        if (!serviceFound) {
+          this.logger.log('Criando novo serviço de webhook...');
+          const service = await twilioClient.messaging.v1.services.create({
+            friendlyName: 'Digitaly Webhook Service',
+            inboundRequestUrl: webhookUrl,
+            statusCallback: webhookUrl
+          });
+          
+          this.logger.log(`Novo serviço de webhook criado: ${service.sid}`);
+          
+          // Associar o número ao serviço
+          const phoneNumber = client.twilioFromNumber.replace('whatsapp:', '');
+          await twilioClient.messaging.v1.services(service.sid)
+            .phoneNumbers.create({ phoneNumberSid: phoneNumber });
+            
+          this.logger.log(`Número ${phoneNumber} associado ao serviço de webhook`);
+        }
+      } catch (error) {
+        this.logger.warn(`Erro ao configurar webhook: ${error.message}`);
+        // Continua mesmo com erro na configuração do webhook
+      }
 
       const message = await twilioClient.messages.create({
         from: fromNumber,
         to: toNumber,
         contentSid: process.env.TWILIO_CONTENT_SID || '',
         contentVariables: JSON.stringify({
-          1: dateStr,
-          2: timeStr,
-          5: appointmentType === 'procedure' ? 'procedimento' : 'consulta'
+          1: patientName,
+          2: appointmentType === 'procedure' ? 'procedimento' : 'consulta',
+          3: specialty,
+          4: dateStr,
+          5: timeStr
         }),
         statusCallback: webhookUrl
       });
@@ -145,6 +215,7 @@ export class WhatsappService implements OnModuleInit {
     date: string;
     time: string;
     appointmentType?: 'procedure' | 'consultation';
+    specialty?: string;
   }) {
     // Valida se é um número de celular antes de tentar enviar
     if (!this.phoneValidator.isCellPhone(to)) {
@@ -160,7 +231,7 @@ export class WhatsappService implements OnModuleInit {
       appointmentTime: appointmentData.time,
       status: 'scheduled' as const,
       notificationSent: false,
-      specialty: 'Consulta Geral', // Valor padrão
+      specialty: appointmentData.specialty, // Removido valor padrão
       appointmentType: appointmentData.appointmentType || 'consultation',
       cpf: '', // Será preenchido posteriormente
       clientId: client.id,
@@ -169,17 +240,20 @@ export class WhatsappService implements OnModuleInit {
 
     const appointment = await this.schedulerService.createAppointment(newAppointment);
 
-    const text = `Olá ${appointmentData.patientName}, você confirma sua consulta para ${appointmentData.date} às ${appointmentData.time}?`;
+    const tipoAgendamento = appointmentData.appointmentType === 'procedure' ? 'procedimento' : 'consulta';
+  const text = `Olá ${appointmentData.patientName}, você confirma seu ${tipoAgendamento} para ${appointmentData.date} às ${appointmentData.time}?`;
     
     const messageResult = await this.sendInteractiveMessage(
       client, 
       to, 
       text, 
       [
-      { title: 'Sim', id: 'confirm_appointment' },
-      { title: 'Não', id: 'cancel_appointment' }
+      { title: 'Confirma presença', id: 'confirm_appointment' },
+      { title: 'Cancelar', id: 'cancel_appointment' }
       ],
-      appointmentData.appointmentType || 'consultation'
+      appointmentData.appointmentType || 'consultation',
+      appointmentData.patientName,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+      appointmentData.specialty || ''
     );
 
     if (messageResult.success) {
@@ -190,9 +264,61 @@ export class WhatsappService implements OnModuleInit {
   }
 
   async handleWebhook(webhookData: WebhookRequestDto) {
-    this.logger.log('Recebendo webhook: ' + JSON.stringify(webhookData));
-
     try {
+      this.logger.log('Recebendo webhook da Twilio: ' + JSON.stringify(webhookData));
+      
+      // Log detalhado para capturar a resposta do botão
+      this.logger.log(`Dados do webhook: AccountSid=${webhookData.AccountSid}, From=${webhookData.From}, To=${webhookData.To}`);
+      
+      // Verificar se temos uma resposta de botão
+      if (webhookData.ButtonText) {
+        this.logger.log(`RESPOSTA DE BOTÃO DETECTADA: ${webhookData.ButtonText}`);
+        
+        // Processar a resposta do botão imediatamente
+        this.logger.log('Buscando agendamento para processar a resposta do botão');
+        const appointment = await this.findAppointmentByPhone(webhookData.From);
+        
+        if (appointment) {
+          this.logger.log(`Agendamento encontrado: ${JSON.stringify(appointment)}`);
+          
+          // Processar a resposta do botão
+          await this.processButtonResponse(appointment, webhookData.ButtonText);
+          
+          return {
+            success: true,
+            message: `Botão processado: ${webhookData.ButtonText}`,
+            appointmentId: appointment.id,
+            buttonResponse: webhookData.ButtonText
+          };
+        } else {
+          this.logger.warn(`Nenhum agendamento encontrado para o telefone: ${webhookData.From}`);
+          return {
+            success: false,
+            error: 'No appointment found for this phone number',
+            buttonResponse: webhookData.ButtonText
+          };
+        }
+      }
+      
+      // Verificar se é apenas uma atualização de status
+      const isStatusUpdate = (webhookData.MessageStatus === 'sent' || webhookData.MessageStatus === 'delivered' || 
+                           webhookData.SmsStatus === 'sent' || webhookData.SmsStatus === 'delivered');
+      
+      if (isStatusUpdate) {
+        this.logger.log(`Atualização de status: ${webhookData.MessageStatus || webhookData.SmsStatus}`);
+        return {
+          success: true,
+          message: 'Status update received',
+          status: webhookData.MessageStatus || webhookData.SmsStatus
+        };
+      }
+      
+      // Se não for uma atualização de status nem uma resposta de botão, verificar se é uma resposta de texto
+      if (!isStatusUpdate && !webhookData.ButtonText && webhookData.Body) {
+        this.logger.log(`Resposta de texto recebida: ${webhookData.Body}. Tratando como resposta.`);
+        // Continuar o processamento para tratar como resposta
+      }
+
       this.logger.log('1. Buscando cliente pelo AccountSid');
       if (!webhookData.AccountSid) {
         throw new Error('AccountSid não fornecido');
@@ -230,6 +356,16 @@ export class WhatsappService implements OnModuleInit {
         };
       }
 
+      // Verificar se o agendamento já foi confirmado ou cancelado
+      if (appointment.status === 'confirmed' || appointment.status === 'cancelled') {
+        this.logger.log(`Agendamento ${appointment.id} já foi ${appointment.status === 'confirmed' ? 'confirmado' : 'cancelado'} anteriormente. Ignorando nova resposta.`);
+        return {
+          success: true,
+          message: `Appointment already ${appointment.status}`,
+          status: appointment.status
+        };
+      }
+
       this.logger.log('6. Processando resposta do botão');
       if (webhookData.ButtonText) {
         await this.processButtonResponse(appointment, webhookData.ButtonText);
@@ -259,11 +395,19 @@ export class WhatsappService implements OnModuleInit {
   }
 
   private isValidWebhookMessage(webhookData: WebhookRequestDto): boolean {
-    this.logger.debug('Validando campos da mensagem:', webhookData);
+    this.logger.log('Validando campos da mensagem: ' + JSON.stringify(webhookData));
+    
+    // Se tiver ButtonText, é uma resposta de botão e deve ser válida
+    if (webhookData.ButtonText) {
+      this.logger.log(`Resposta de botão detectada: ${webhookData.ButtonText}`);
+      return true;
+    }
+    
+    // Caso contrário, verifica se é uma atualização de status normal
     return !!(
       webhookData.MessageSid &&
       webhookData.From &&
-      (webhookData.MessageStatus || webhookData.SmsStatus)  // Aceita tanto MessageStatus quanto SmsStatus
+      (webhookData.MessageStatus || webhookData.SmsStatus)
     );
   }
 
@@ -334,12 +478,17 @@ export class WhatsappService implements OnModuleInit {
 
   private async processButtonResponse(appointment: IAppointment, response: string): Promise<void> {
     this.logger.log(`Iniciando processamento de resposta do botão para agendamento ${appointment.id}`);
+    this.logger.log(`Resposta recebida: '${response}'`);
+    
+    // Normalizar a resposta para facilitar a comparação
+    const normalizedResponse = response.trim().toUpperCase();
+    this.logger.log(`Resposta normalizada: '${normalizedResponse}'`);
     
     let status: 'confirmed' | 'cancelled' | 'scheduled' = 'scheduled';
     let shouldSendResponse = false;
     let responseMessage = '';
     
-    if (response.toUpperCase() === 'SIM') {
+    if (normalizedResponse === 'CONFIRMA PRESENÇA' || normalizedResponse === 'SIM') {
       status = 'confirmed';
       shouldSendResponse = true;
       
@@ -397,7 +546,7 @@ export class WhatsappService implements OnModuleInit {
       } else {
         responseMessage = `Agradecemos o seu retorno. O agendamento foi realizado para a data ${formattedDate}, às ${appointment.appointmentTime}.`;
       }
-    } else if (response.toUpperCase() === 'NÃO') {
+    } else if (normalizedResponse === 'CANCELAR' || normalizedResponse === 'NÃO') {
       status = 'cancelled';
       shouldSendResponse = true;
       responseMessage = 'Agradecemos o seu retorno. O agendamento foi desmarcado. Caso queira marcar um novo agendamento, entre em contato com a unidade básica de saúde da sua região.';
@@ -422,28 +571,44 @@ export class WhatsappService implements OnModuleInit {
 
       // Envia mensagem de retorno se necessário
       if (shouldSendResponse && responseMessage) {
-        this.logger.log(`Enviando mensagem de retorno para ${appointment.patientPhone}`);
+        this.logger.log(`Preparando para enviar mensagem de resposta para ${appointment.patientPhone}`);
         
-        try {
-          const twilioAccountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
-          const twilioAuthToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
-          const twilioFromNumber = this.configService.get<string>('TWILIO_FROM_NUMBER');
+        // Usar as credenciais do cliente se disponíveis, caso contrário usar as do .env
+        const client = await this.clientRepository.findOne({
+          where: { id: appointment.clientId }
+        });
+        
+        const twilioAccountSid = client?.twilioAccountSid || this.configService.get<string>('TWILIO_ACCOUNT_SID');
+        const twilioAuthToken = client?.twilioAuthToken || this.configService.get<string>('TWILIO_AUTH_TOKEN');
+        const twilioFromNumber = client?.twilioFromNumber || this.configService.get<string>('TWILIO_FROM_NUMBER');
 
           if (!twilioAccountSid || !twilioAuthToken || !twilioFromNumber) {
             throw new Error('Configurações do Twilio não encontradas');
           }
 
+          this.logger.log(`Enviando mensagem de retorno para ${appointment.patientPhone}`);
+        
+        try {
           const twilioClient = this.getTwilioClient({
             twilioAccountSid,
             twilioAuthToken,
             twilioFromNumber
           });
           
+          this.logger.log(`Enviando mensagem para ${appointment.patientPhone} com o texto: ${responseMessage}`);
+          
+          // Garantir que o número tenha o formato correto
+          const formattedPhone = appointment.patientPhone.includes('whatsapp:') 
+            ? appointment.patientPhone 
+            : `whatsapp:${appointment.patientPhone}`;
+            
           await twilioClient.messages.create({
             from: `whatsapp:${twilioFromNumber}`,
-            to: `whatsapp:${appointment.patientPhone}`,
+            to: formattedPhone,
             body: responseMessage
           });
+          
+          this.logger.log(`Mensagem enviada com sucesso para ${formattedPhone}`);
           
           this.logger.log('Mensagem de retorno enviada com sucesso');
     } catch (error) {

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Req, Logger } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req, Logger, HttpCode } from '@nestjs/common';
 import { WhatsappService } from './whatsapp.service';
 import { ApiOperation, ApiResponse, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { GetClient } from '../common/decorators/get-client.decorator';
@@ -45,6 +45,8 @@ export class WhatsappController {
         patientName: data.patientName,
         date: data.date,
         time: data.time,
+        specialty: data.specialty,
+        appointmentType: data.appointmentType
       },
     );
   }
@@ -77,18 +79,62 @@ export class WhatsappController {
       },
     },
   })
-  async handleWebhook(@Body() body: any) {
-    const { MessageStatus, Body } = body;
-
-    if (MessageStatus) {
-      // Callback de status (enviado/entregue/...)
-      this.logger.debug(`Status da mensagem: ${MessageStatus}`);
-    } else {
-      // Mensagem recebida do paciente
-      this.logger.debug(`Mensagem recebida: ${Body}`);
+  async handleWebhook(@Body() body: any, @Req() request: Request) {
+    // Log detalhado dos dados recebidos para capturar a resposta do botão
+    this.logger.log(`===== WEBHOOK RECEBIDO =====`);
+    this.logger.log(`Dados completos: ${JSON.stringify(body)}`);
+    
+    // Log de campos específicos para facilitar o diagnóstico
+    this.logger.log(`ButtonText: ${body.ButtonText || 'Não encontrado'}`);
+    this.logger.log(`Body: ${body.Body || 'Não encontrado'}`);
+    this.logger.log(`From: ${body.From || 'Não encontrado'}`);
+    this.logger.log(`To: ${body.To || 'Não encontrado'}`);
+    
+    // Verificar todos os campos do body para encontrar a resposta do botão
+    for (const key in body) {
+      this.logger.log(`Campo ${key}: ${body[key]}`);
     }
-
-    // Sempre retorna 200 para evitar erro 11200
-    return { status: 'ok' };
+    
+    try {
+      // Identificar a resposta do botão (pode estar em diferentes campos)
+      let buttonText = body.ButtonText;
+      
+      // Se não encontrou no ButtonText, verificar no Body
+      if (!buttonText && body.Body) {
+        // Verificar se o Body contém uma resposta de botão conhecida
+        if (['Confirma presença', 'Cancelar', 'SIM', 'NÃO'].includes(body.Body)) {
+          buttonText = body.Body;
+          this.logger.log(`Resposta de botão encontrada no campo Body: ${buttonText}`);
+        }
+      }
+      
+      // Converter o body para o formato esperado pelo serviço
+      const webhookData = {
+        AccountSid: body.AccountSid,
+        MessageSid: body.MessageSid || body.SmsSid,
+        From: body.From,
+        To: body.To,
+        Body: body.Body,
+        MessageStatus: body.MessageStatus,
+        SmsStatus: body.SmsStatus,
+        ButtonText: buttonText // Usar a resposta do botão identificada
+      };
+      
+      this.logger.log(`Enviando para processamento: ButtonText = ${buttonText}`);
+      
+      // Chamar o serviço para processar o webhook
+      const result = await this.whatsappService.handleWebhook(webhookData);
+      
+      this.logger.debug(`Resultado do processamento do webhook: ${JSON.stringify(result)}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Erro ao processar webhook: ${error.message}`);
+      // Sempre retorna 200 para evitar erro 11200 do Twilio
+      return { 
+        success: false, 
+        error: error.message,
+        status: 'error'
+      };
+    }
   }
 }

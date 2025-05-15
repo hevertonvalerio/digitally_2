@@ -20,6 +20,13 @@ export class WebhookRequestDto {
   From: string;
 
   @ApiProperty({
+    description: 'Número do destinatário',
+    example: 'whatsapp:+5511888888888',
+    required: false
+  })
+  To?: string;
+
+  @ApiProperty({
     description: 'Status da mensagem SMS',
     example: 'received',
     enum: ['queued', 'sent', 'delivered', 'read', 'failed', 'received']
@@ -40,4 +47,11 @@ export class WebhookRequestDto {
     required: false
   })
   ButtonText?: string;
+
+  @ApiProperty({
+    description: 'Conteúdo da mensagem (se houver)',
+    example: 'Olá, gostaria de confirmar minha consulta',
+    required: false
+  })
+  Body?: string;
 }

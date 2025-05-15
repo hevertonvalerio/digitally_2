@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsPhoneNumber, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsPhoneNumber, IsEnum } from 'class-validator';
 
 export class SendAppointmentConfirmationDto {
   @ApiProperty({
@@ -35,12 +35,20 @@ export class SendAppointmentConfirmationDto {
   time: string;
 
   @ApiProperty({
-    description: 'Tipo do agendamento',
-    example: 'procedure',
-    enum: ['procedure', 'consultation'],
-    default: 'consultation'
+    description: 'Especialidade médica',
+    example: 'Cardiologia',
   })
   @IsString()
-  @IsOptional()
-  appointmentType?: 'procedure' | 'consultation';
-} 
+  @IsNotEmpty()
+  specialty: string;
+
+  @ApiProperty({
+    description: 'Tipo do agendamento',
+    example: 'consultation',
+    enum: ['procedure', 'consultation'],
+  })
+  @IsString()
+  @IsEnum(['procedure', 'consultation'])
+  @IsNotEmpty()
+  appointmentType: 'procedure' | 'consultation';
+}
